@@ -1,8 +1,20 @@
+import asyncio
 import os
 import json
+import time
+import base64
+import binascii
+from collections import deque
 from typing import Any, Dict, Optional
 import requests
-from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    Depends,
+    Header,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, String, Integer, Text
 from sqlalchemy.ext.declarative import declarative_base
@@ -63,6 +75,18 @@ PRIVATE_BACKUP_KEYS = {
     "refresh_token",
     "pin_code",
     "webhook_url",
+    "last_trigger_at",
+    "last_trigger_category",
+    "reframing_entries",
+    "emotion_stats",
+    "weekday_hour_matrix",
+    "daily_incidents",
+    "relapse_reflections",
+    "shadow_letter",
+    "discipline_codex",
+    "stress_detection_enabled",
+    "codex_completed",
+    "community_chat_settings",
 }
 
 
@@ -183,3 +207,249 @@ def get_community(db: Session = Depends(get_db)):
 @app.get("/community/stats")
 def get_community_stats(db: Session = Depends(get_db)):
     return _community_totals(db)
+
+
+@app.get("/community/leaderboard")
+def get_community_leaderboard(db: Session = Depends(get_db)):
+    users = (
+        db.query(UserStatsDB)
+        .order_by(UserStatsDB.streak.desc(), UserStatsDB.total_focus_minutes.desc())
+        .limit(5)
+        .all()
+    )
+    return {
+        "leaderboard": [
+            {
+                "rank": rank,
+                "username": f"Fokus-Krieger #{rank}",
+                "streak": user.streak,
+                "focus_minutes": user.total_focus_minutes,
+            }
+            for rank, user in enumerate(users, start=1)
+        ]
+    }
+
+
+class SupportChatManager:
+    """In-memory anonymous matchmaking for a single server process."""
+
+    MAX_WAITING_PER_ROLE = 100
+    MAX_MESSAGE_LENGTH = 1000
+    MAX_IMAGE_SIZE = 500 * 1024
+    MESSAGE_WINDOW_SECONDS = 10
+    MAX_MESSAGES_PER_WINDOW = 8
+
+    def __init__(self):
+        self.waiting_seekers = []
+        self.waiting_helpers = []
+        self.partners = {}
+        self.lock = asyncio.Lock()
+        self.message_times = {}
+        self.roles = {}
+
+    async def connect(self, websocket: WebSocket, role: str):
+        await websocket.accept()
+        async with self.lock:
+            waiting = (
+                self.waiting_seekers if role == "seeker" else self.waiting_helpers
+            )
+            if len(waiting) >= self.MAX_WAITING_PER_ROLE:
+                await websocket.close(code=1013, reason="Warteschlange ausgelastet")
+                return False
+            waiting.append(websocket)
+            self.message_times[websocket] = deque()
+            self.roles[websocket] = role
+
+            other_queue = (
+                self.waiting_helpers if role == "seeker" else self.waiting_seekers
+            )
+            if not other_queue:
+                await websocket.send_json({"type": "waiting"})
+
+            matches = []
+            while self.waiting_seekers and self.waiting_helpers:
+                seeker = self.waiting_seekers.pop(0)
+                helper = self.waiting_helpers.pop(0)
+                self.partners[seeker] = helper
+                self.partners[helper] = seeker
+                matches.append((seeker, helper))
+
+        for seeker, helper in matches:
+            await self._notify_match(seeker, helper)
+        return True
+
+    async def _notify_match(self, seeker: WebSocket, helper: WebSocket):
+        try:
+            await seeker.send_json({"type": "connected", "role": "seeker"})
+            await helper.send_json({"type": "connected", "role": "helper"})
+        except (RuntimeError, WebSocketDisconnect):
+            await self.disconnect(seeker)
+            await self.disconnect(helper)
+
+    async def relay_packet(self, websocket: WebSocket, packet: dict):
+        async with self.lock:
+            partner = self.partners.get(websocket)
+        if partner is None:
+            await websocket.send_json(
+                {"type": "error", "message": "Noch kein Partner verbunden."}
+            )
+            return
+        try:
+            await partner.send_json(packet)
+        except (RuntimeError, WebSocketDisconnect):
+            await self.disconnect(partner)
+
+    def make_outgoing_packet(self, role: str, packet: dict):
+        packet_type = packet.get("type")
+        if packet_type == "user_info":
+            username = packet.get("username")
+            rank = packet.get("rank")
+            streak = packet.get("streak")
+            if (
+                not isinstance(username, str)
+                or not isinstance(rank, str)
+                or len(username) > 40
+                or len(rank) > 80
+                or not username.isprintable()
+                or not rank.isprintable()
+                or not isinstance(streak, int)
+                or isinstance(streak, bool)
+                or not 0 <= streak <= 100000
+            ):
+                return None
+            username = " ".join(username.split())
+            rank = " ".join(rank.split())
+            if not username or not rank:
+                return None
+            return {
+                "type": "user_info",
+                "username": username,
+                "rank": rank,
+                "streak": streak,
+            }
+        if packet_type in {"message", "sticker"}:
+            text = packet.get("text")
+            if not isinstance(text, str) or not text.strip() or not text.isprintable():
+                return None
+            if len(text) > self.MAX_MESSAGE_LENGTH:
+                return None
+            return {
+                "type": packet_type,
+                "text": text.strip(),
+                "role": role,
+            }
+        if packet_type == "image":
+            image_data = packet.get("image_data")
+            content_type = packet.get("content_type")
+            if (
+                not isinstance(image_data, str)
+                or content_type not in {"image/png", "image/jpeg"}
+                or len(image_data) > ((self.MAX_IMAGE_SIZE + 2) // 3) * 4
+            ):
+                return None
+            try:
+                decoded = base64.b64decode(image_data, validate=True)
+            except (binascii.Error, ValueError):
+                return None
+            if len(decoded) > self.MAX_IMAGE_SIZE:
+                return None
+            if content_type == "image/png" and not decoded.startswith(b"\x89PNG\r\n\x1a\n"):
+                return None
+            if content_type == "image/jpeg" and not decoded.startswith(b"\xff\xd8\xff"):
+                return None
+            return {
+                "type": "image",
+                "content_type": content_type,
+                "image_data": image_data,
+                "role": role,
+            }
+        return None
+
+    async def allow_message(self, websocket: WebSocket) -> bool:
+        now = time.monotonic()
+        async with self.lock:
+            times = self.message_times.get(websocket)
+            if times is None:
+                return False
+            while times and now - times[0] > self.MESSAGE_WINDOW_SECONDS:
+                times.popleft()
+            if len(times) >= self.MAX_MESSAGES_PER_WINDOW:
+                return False
+            times.append(now)
+            return True
+
+    async def disconnect(self, websocket: WebSocket):
+        async with self.lock:
+            for waiting in (self.waiting_seekers, self.waiting_helpers):
+                if websocket in waiting:
+                    waiting.remove(websocket)
+            self.message_times.pop(websocket, None)
+            self.roles.pop(websocket, None)
+            partner = self.partners.pop(websocket, None)
+            if partner is not None:
+                self.partners.pop(partner, None)
+                self.roles.pop(partner, None)
+
+        if partner is not None:
+            try:
+                await partner.send_json({"type": "disconnected"})
+            except (RuntimeError, WebSocketDisconnect):
+                pass
+
+
+chat_manager = SupportChatManager()
+
+
+@app.websocket("/ws/support-chat/{role}")
+async def support_chat_websocket(websocket: WebSocket, role: str):
+    if role not in {"seeker", "helper"}:
+        await websocket.close(code=1008, reason="Ungültige Chat-Rolle")
+        return
+    if websocket.headers.get("origin"):
+        await websocket.close(code=1008, reason="Browser-Origin nicht erlaubt")
+        return
+
+    connected = await chat_manager.connect(websocket, role)
+    if not connected:
+        return
+    try:
+        while True:
+            raw_packet = await websocket.receive_text()
+            if len(raw_packet) > ((chat_manager.MAX_IMAGE_SIZE + 2) // 3) * 4 + 2048:
+                await websocket.send_json(
+                    {"type": "error", "message": "Nachricht ist zu lang."}
+                )
+                continue
+            try:
+                packet = json.loads(raw_packet)
+            except json.JSONDecodeError:
+                await websocket.send_json(
+                    {"type": "error", "message": "Ungültiges Nachrichtenformat."}
+                )
+                continue
+            if not isinstance(packet, dict):
+                await websocket.send_json(
+                    {"type": "error", "message": "Ungültiges Nachrichtenformat."}
+                )
+                continue
+            packet_type = packet.get("type")
+            if packet_type not in {"user_info", "message", "sticker", "image"}:
+                await websocket.send_json(
+                    {"type": "error", "message": "Unbekannter Nachrichtentyp."}
+                )
+                continue
+            if not await chat_manager.allow_message(websocket):
+                await websocket.send_json(
+                    {"type": "error", "message": "Bitte sende langsamer."}
+                )
+                continue
+            role = chat_manager.roles.get(websocket)
+            outgoing = chat_manager.make_outgoing_packet(role, packet)
+            if outgoing is None:
+                await websocket.send_json(
+                    {"type": "error", "message": "Ungültige oder zu große Nachricht."}
+                )
+                continue
+            await chat_manager.relay_packet(websocket, outgoing)
+    except WebSocketDisconnect:
+        await chat_manager.disconnect(websocket)

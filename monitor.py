@@ -1,6 +1,8 @@
 import threading
 import sys
 import os
+import time
+from collections import deque
 import psutil
 from pynput import keyboard
 import tkinter as tk
@@ -33,6 +35,20 @@ class BadBehaviorMonitor:
         ]
         self.whitelist_thread = None
         self.whitelist_stop_event = threading.Event()
+        self.on_trigger_callback = None
+        self.on_stress_callback = None
+        self.stress_detection_enabled = bool(
+            self.stats_manager.get_stats().get("stress_detection_enabled", False)
+        )
+        self.keystroke_timestamps = deque(maxlen=15)
+        self.stress_warning_active = False
+        self.stress_cooldown_seconds = 60
+        self.last_stress_warning = None
+
+    def set_stress_detection(self, enabled: bool):
+        self.stress_detection_enabled = bool(enabled)
+        self.keystroke_timestamps.clear()
+        self.stress_warning_active = False
 
     def update_trigger_words(self, new_words):
         self.trigger_words = [w.lower() for w in new_words]
@@ -91,6 +107,8 @@ class BadBehaviorMonitor:
 
     def _on_press(self, key):
         try:
+            if self.stress_detection_enabled:
+                self._record_keystroke_timing()
             if hasattr(key, 'char') and key.char:
                 self.current_typed += key.char.lower()
                 if len(self.current_typed) > 50:
@@ -102,6 +120,45 @@ class BadBehaviorMonitor:
                         break
         except Exception:
             pass
+
+    def _record_keystroke_timing(self):
+        now = time.monotonic()
+        self.keystroke_timestamps.append(now)
+        if len(self.keystroke_timestamps) < self.keystroke_timestamps.maxlen:
+            return
+
+        intervals = [
+            current - previous
+            for previous, current in zip(
+                self.keystroke_timestamps,
+                list(self.keystroke_timestamps)[1:],
+            )
+        ]
+        if not intervals or sum(intervals) / len(intervals) >= 0.06:
+            return
+        if (
+            self.stress_warning_active
+            or (
+                self.last_stress_warning is not None
+                and now - self.last_stress_warning < self.stress_cooldown_seconds
+            )
+        ):
+            return
+
+        self.stress_warning_active = True
+        self.last_stress_warning = now
+        self.keystroke_timestamps.clear()
+        if self.on_stress_callback:
+            self.on_stress_callback()
+
+        threading.Thread(
+            target=self._reset_stress_cooldown,
+            daemon=True,
+        ).start()
+
+    def _reset_stress_cooldown(self):
+        time.sleep(self.stress_cooldown_seconds)
+        self.stress_warning_active = False
 
     def _trigger_intervention(self, word):
         self.stats_manager.add_prevented_habit(word)
@@ -122,15 +179,18 @@ class BadBehaviorMonitor:
         self.shutdown_timer = threading.Timer(900, self._execute_shutdown)
         self.shutdown_timer.start()
 
-        ai_message = f"⚠️ **REŞO INTERVENTION** ⚠️\n\nDu hast nach '{word}' gesucht! Konzentriere dich auf dein Ziel."
-        try:
-            root = tk.Tk()
-            root.withdraw()
-            root.attributes("-topmost", True)
-            messagebox.showwarning("Reşo - Achtung", ai_message)
-            root.destroy()
-        except:
-            pass
+        if self.on_trigger_callback:
+            self.on_trigger_callback(word)
+        else:
+            ai_message = f"⚠️ **REŞO INTERVENTION** ⚠️\n\nDu hast nach '{word}' gesucht! Konzentriere dich auf dein Ziel."
+            try:
+                root = tk.Tk()
+                root.withdraw()
+                root.attributes("-topmost", True)
+                messagebox.showwarning("Reşo - Achtung", ai_message)
+                root.destroy()
+            except:
+                pass
 
     def _kill_target_processes(self):
         for proc in psutil.process_iter(['name']):

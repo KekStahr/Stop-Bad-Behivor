@@ -20,5 +20,41 @@
     "pin_code": "",
     "webhook_url": "",
     "panic_hotkey": "<ctrl>+<alt>+x",
-    "level": "Disziplin-Novize"
+    "level": "Disziplin-Novize",
+    "daily_moods": {},
+    "monthly_challenge_badges": [],
+    "savings_goal": {
+        "name": "Neues Auto",
+        "target_amount": 1.0
+    },
+    "last_sunday_report": "",
+    "shadow_letter": "Du bist derzeitig Impotent! Verbessere dich f\u00fcr dein zuk\u00fcnfitige Tochter",
+    "discipline_codex": {
+        "identity": "Ein Super Dad",
+        "rules": "1. Ein Leben im jetzt Leben ohne Ketten der Sucht"
+    },
+    "stress_detection_enabled": false,
+    "codex_completed": true,
+    "community_chat_settings": {
+        "auto_connect_trigger": true,
+        "allow_helper_mode": true
+    },
+    "cloud_backup_initialized": false,
+    "cloud_backup_dirty": false,
+    "reframing_entries": [],
+    "emotion_stats": {},
+    "weekday_hour_matrix": {},
+    "daily_incidents": {},
+    "relapse_reflections": [],
+    "whitelist_mode_enabled": false,
+    "whitelisted_apps": [
+        "code.exe",
+        "winword.exe",
+        "excel.exe",
+        "powerpnt.exe",
+        "python.exe",
+        "pycharm64.exe",
+        "notepad.exe",
+        "resoapp.exe"
+    ]
 }

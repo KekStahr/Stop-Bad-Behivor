@@ -21,7 +21,12 @@ KEYRING_SERVICE = "ResoApp Google Cloud Backup"
 def _client_id():
     client_id = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "").strip()
     if not client_id:
-        raise RuntimeError("GOOGLE_OAUTH_CLIENT_ID ist nicht konfiguriert.")
+        raise RuntimeError(
+            "Google-Login ist nicht eingerichtet: GOOGLE_OAUTH_CLIENT_ID fehlt. "
+            "Lege in der Google Cloud Console einen OAuth-Client vom Typ "
+            "'Desktop-App' an, setze die Client-ID als Umgebungsvariable und "
+            "starte Reşo danach neu. Details stehen in README.md."
+        )
     return client_id
 
 
