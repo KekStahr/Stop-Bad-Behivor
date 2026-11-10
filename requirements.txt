@@ -5,3 +5,4 @@ pystray
 Pillow
 requests
 matplotlib
+keyring

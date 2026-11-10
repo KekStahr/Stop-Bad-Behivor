@@ -1,8 +1,5 @@
-customtkinter
-pynput
-psutil
-pystray
-Pillow
+fastapi
+uvicorn
+sqlalchemy
 requests
-matplotlib
-pypresence
+psycopg2-binary

@@ -20,6 +20,19 @@ class BadBehaviorMonitor:
         self.listener = None
         self.active_incident = False
         self.shutdown_timer = None
+        self.whitelist_mode_active = False
+        self.whitelisted_apps = [
+            "code.exe",
+            "winword.exe",
+            "excel.exe",
+            "powerpnt.exe",
+            "python.exe",
+            "pycharm64.exe",
+            "notepad.exe",
+            "resoapp.exe",
+        ]
+        self.whitelist_thread = None
+        self.whitelist_stop_event = threading.Event()
 
     def update_trigger_words(self, new_words):
         self.trigger_words = [w.lower() for w in new_words]
@@ -32,6 +45,49 @@ class BadBehaviorMonitor:
     def stop_monitoring(self):
         if self.listener:
             self.listener.stop()
+
+    def set_whitelist_mode(self, active: bool, custom_whitelist=None):
+        if custom_whitelist is not None:
+            self.whitelisted_apps = [
+                app.replace("\\", "/").rsplit("/", 1)[-1].lower().strip()
+                for app in custom_whitelist
+                if app.strip()
+            ]
+        self.whitelist_mode_active = active
+        if not active:
+            self.stop_whitelist_enforcement()
+
+    def start_whitelist_enforcement(self):
+        if not self.whitelist_mode_active:
+            return
+        if self.whitelist_thread and self.whitelist_thread.is_alive():
+            return
+
+        self.whitelist_stop_event.clear()
+
+        def enforcement_loop():
+            target_processes = {target.lower() for target in self.target_processes}
+            while not self.whitelist_stop_event.is_set():
+                for proc in psutil.process_iter(["name"]):
+                    if self.whitelist_stop_event.is_set():
+                        break
+                    try:
+                        process_name = (proc.info.get("name") or "").lower()
+                        if (
+                            process_name in target_processes
+                            and process_name not in self.whitelisted_apps
+                        ):
+                            proc.terminate()
+                    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                        continue
+                self.whitelist_stop_event.wait(3)
+
+        self.whitelist_thread = threading.Thread(target=enforcement_loop, daemon=True)
+        self.whitelist_thread.start()
+
+    def stop_whitelist_enforcement(self):
+        self.whitelist_mode_active = False
+        self.whitelist_stop_event.set()
 
     def _on_press(self, key):
         try:

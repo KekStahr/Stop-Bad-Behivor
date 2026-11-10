@@ -1,15 +1,34 @@
 import json
+import logging
 import os
+import threading
 from datetime import datetime, date
 import requests
 
 DATA_FILE = "stats_data.json"
-CLOUD_URL = "https://stop-bad-behivor-q1d4.onrender.com/sync"
+CLOUD_URL = os.getenv(
+    "RESO_CLOUD_URL",
+    "https://stop-bad-behivor-q1d4.onrender.com/sync",
+).rstrip("/")
 COMMUNITY_URL = CLOUD_URL.rsplit("/sync", 1)[0] + "/community"
+BACKUP_URL = CLOUD_URL.rsplit("/sync", 1)[0] + "/user/backup"
+RESTORE_URL = CLOUD_URL.rsplit("/sync", 1)[0] + "/user/restore"
+PRIVATE_BACKUP_KEYS = {
+    "account_id",
+    "google_account_email",
+    "cloud_backup_initialized",
+    "cloud_backup_dirty",
+    "pin_code",
+    "webhook_url",
+}
 
 class StatsManager:
     def __init__(self):
         self.data = self.load_data()
+        self.last_cloud_backup_error = None
+        self._backup_sync_lock = threading.Lock()
+        self._backup_sync_pending = False
+        self._backup_sync_thread = None
 
     def load_data(self):
         if os.path.exists(DATA_FILE):
@@ -20,6 +39,23 @@ class StatsManager:
                     data.setdefault("longest_streak", data.get("streak", 0))
                     data.setdefault("trigger_stats", {})
                     data.setdefault("daily_activity", {})
+                    data.setdefault("daily_moods", {})
+                    data.setdefault("cloud_backup_initialized", False)
+                    data.setdefault("cloud_backup_dirty", False)
+                    data.setdefault("whitelist_mode_enabled", False)
+                    data.setdefault(
+                        "whitelisted_apps",
+                        [
+                            "code.exe",
+                            "winword.exe",
+                            "excel.exe",
+                            "powerpnt.exe",
+                            "python.exe",
+                            "pycharm64.exe",
+                            "notepad.exe",
+                            "resoapp.exe",
+                        ],
+                    )
                     data.setdefault("incident_hours", {})
                     data.setdefault("hourly_rate", 25.0)
                     data.setdefault("pin_code", "")
@@ -39,6 +75,20 @@ class StatsManager:
             "trigger_words": ["porno", "casino", "aufschieben", "gambling", "cheat"],
             "trigger_stats": {},
             "daily_activity": {},
+            "daily_moods": {},
+            "cloud_backup_initialized": False,
+            "cloud_backup_dirty": False,
+            "whitelist_mode_enabled": False,
+            "whitelisted_apps": [
+                "code.exe",
+                "winword.exe",
+                "excel.exe",
+                "powerpnt.exe",
+                "python.exe",
+                "pycharm64.exe",
+                "notepad.exe",
+                "resoapp.exe",
+            ],
             "incident_hours": {},
             "hourly_rate": 25.0,
             "pin_code": "",
@@ -47,10 +97,183 @@ class StatsManager:
             "level": "Disziplin-Novize"
         }
 
-    def save_data(self):
+    def _write_local_data(self):
         with open(DATA_FILE, "w") as f:
             json.dump(self.data, f, indent=4)
+
+    def save_data(self, sync_cloud_backup=True):
+        if (
+            sync_cloud_backup
+            and self.data.get("account_id")
+            and self.data.get("cloud_backup_initialized")
+        ):
+            self.data["cloud_backup_dirty"] = True
+        self._write_local_data()
         self.sync_with_cloud()
+        if sync_cloud_backup and self.data.get("cloud_backup_initialized"):
+            self._schedule_cloud_backup()
+
+    def _schedule_cloud_backup(self):
+        if not self.data.get("account_id"):
+            return
+        with self._backup_sync_lock:
+            self._backup_sync_pending = True
+            if self._backup_sync_thread and self._backup_sync_thread.is_alive():
+                return
+            self._backup_sync_thread = threading.Thread(
+                target=self._run_cloud_backup_queue,
+                daemon=True,
+            )
+            self._backup_sync_thread.start()
+
+    def _run_cloud_backup_queue(self):
+        while True:
+            with self._backup_sync_lock:
+                if not self._backup_sync_pending:
+                    self._backup_sync_thread = None
+                    return
+                self._backup_sync_pending = False
+            self.sync_full_backup()
+
+    def sync_full_backup(self):
+        account_id = self.data.get("account_id")
+        if not account_id:
+            self.last_cloud_backup_error = "Kein Google-Konto verbunden."
+            return False
+        try:
+            from google_oauth import get_google_access_token
+
+            token = get_google_access_token(account_id)
+            if self.data.get("cloud_backup_dirty"):
+                return self.upload_full_backup(token)
+
+            response = requests.get(
+                RESTORE_URL,
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=10,
+            )
+            if response.status_code == 404:
+                return self.upload_full_backup(token)
+            response.raise_for_status()
+            backup = response.json().get("stats_data")
+            if not isinstance(backup, dict):
+                raise ValueError("Das Cloud-Backup hat ein ungültiges Format.")
+
+            self.data.update(
+                {
+                    key: value
+                    for key, value in backup.items()
+                    if key not in PRIVATE_BACKUP_KEYS
+                }
+            )
+            self.data["cloud_backup_initialized"] = True
+            self.data["cloud_backup_dirty"] = False
+            self._write_local_data()
+            self.last_cloud_backup_error = None
+            return True
+        except Exception as error:
+            self.last_cloud_backup_error = str(error)
+            logging.exception("Cloud-Synchronisierung konnte nicht abgeschlossen werden.")
+            return False
+
+    def upload_full_backup(self, access_token=None):
+        account_id = self.data.get("account_id")
+        if not account_id:
+            self.last_cloud_backup_error = "Kein Google-Konto verbunden."
+            return False
+
+        try:
+            from google_oauth import get_google_access_token
+
+            token = access_token or get_google_access_token(account_id)
+            stats_data = {
+                key: value
+                for key, value in self.data.items()
+                if key not in PRIVATE_BACKUP_KEYS
+            }
+            response = requests.post(
+                BACKUP_URL,
+                json={"stats_data": stats_data},
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=10,
+            )
+            response.raise_for_status()
+            self.last_cloud_backup_error = None
+            self.data["cloud_backup_initialized"] = True
+            self.data["cloud_backup_dirty"] = False
+            self._write_local_data()
+            return True
+        except Exception as error:
+            self.last_cloud_backup_error = str(error)
+            logging.exception("Cloud-Backup konnte nicht hochgeladen werden.")
+            return False
+
+    def download_full_backup(self):
+        account_id = self.data.get("account_id")
+        if not account_id:
+            self.last_cloud_backup_error = "Kein Google-Konto verbunden."
+            return False
+
+        try:
+            from google_oauth import get_google_access_token
+
+            token = get_google_access_token(account_id)
+            response = requests.get(
+                RESTORE_URL,
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=10,
+            )
+            if response.status_code == 404:
+                self.last_cloud_backup_error = "Für dieses Konto wurde kein Backup gefunden."
+                return False
+            response.raise_for_status()
+            backup = response.json().get("stats_data")
+            if not isinstance(backup, dict):
+                raise ValueError("Das Cloud-Backup hat ein ungültiges Format.")
+
+            self.data.update(
+                {
+                    key: value
+                    for key, value in backup.items()
+                    if key not in PRIVATE_BACKUP_KEYS
+                }
+            )
+            self.data["cloud_backup_initialized"] = True
+            self.data["cloud_backup_dirty"] = False
+            self._write_local_data()
+            self.last_cloud_backup_error = None
+            return True
+        except Exception as error:
+            self.last_cloud_backup_error = str(error)
+            logging.exception("Cloud-Backup konnte nicht wiederhergestellt werden.")
+            return False
+
+    def connect_google_account(self, userinfo, token_data):
+        account_id = userinfo["sub"]
+        refresh_token = token_data.get("refresh_token")
+        if not refresh_token:
+            raise ValueError("Google hat kein Refresh-Token ausgegeben.")
+        from google_oauth import store_google_refresh_token
+
+        store_google_refresh_token(account_id, refresh_token)
+        self.data["account_id"] = account_id
+        self.data["google_account_email"] = userinfo.get("email", "")
+        self.data["cloud_backup_initialized"] = False
+        self.data["cloud_backup_dirty"] = False
+        self.save_data(sync_cloud_backup=False)
+        return True
+
+    def disconnect_google_account(self):
+        account_id = self.data.get("account_id")
+        if account_id:
+            from google_oauth import revoke_google_refresh_token
+
+            revoke_google_refresh_token(account_id)
+        self.data.pop("account_id", None)
+        self.data.pop("google_account_email", None)
+        self.data.pop("cloud_backup_initialized", None)
+        self.data.pop("cloud_backup_dirty", None)
+        self.save_data(sync_cloud_backup=False)
 
     def sync_with_cloud(self):
         try:
@@ -104,12 +327,14 @@ class StatsManager:
         
         self.save_data()
 
-    def add_timer_session(self, minutes):
+    def add_timer_session(self, minutes, mood_score=2):
         self.data["timer_activations"] += 1
         self.data["total_focus_minutes"] += minutes
         today_str = str(date.today())
         daily = self.data.setdefault("daily_activity", {})
         daily[today_str] = daily.get(today_str, 0) + minutes
+        daily_moods = self.data.setdefault("daily_moods", {})
+        daily_moods.setdefault(today_str, []).append(mood_score)
         self.update_streak()
         self.save_data()
 

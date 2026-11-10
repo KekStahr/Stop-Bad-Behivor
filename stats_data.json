@@ -11,5 +11,14 @@
         "gambling",
         "cheat",
         "stri"
-    ]
+    ],
+    "longest_streak": 1,
+    "trigger_stats": {},
+    "daily_activity": {},
+    "incident_hours": {},
+    "hourly_rate": 0.1,
+    "pin_code": "",
+    "webhook_url": "",
+    "panic_hotkey": "<ctrl>+<alt>+x",
+    "level": "Disziplin-Novize"
 }

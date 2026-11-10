@@ -1,7 +1,10 @@
 import os
-from fastapi import FastAPI, HTTPException, Depends
+import json
+from typing import Any, Dict, Optional
+import requests
+from fastapi import FastAPI, HTTPException, Depends, Header
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, String, Integer
+from sqlalchemy import create_engine, Column, String, Integer, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 
@@ -21,6 +24,13 @@ class UserStatsDB(Base):
     total_focus_minutes = Column(Integer, default=0)
     habits_prevented = Column(Integer, default=0)
 
+
+class FullUserBackupDB(Base):
+    __tablename__ = "full_user_backups"
+    google_sub = Column(String, primary_key=True, index=True)
+    stats_json = Column(Text, nullable=False)
+
+
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title="Reşo Cloud & Community API")
 
@@ -38,6 +48,49 @@ class UserStatsSchema(BaseModel):
     total_focus_minutes: int
     habits_prevented: int
 
+
+class FullUserDataSchema(BaseModel):
+    stats_data: Dict[str, Any]
+
+
+PRIVATE_BACKUP_KEYS = {
+    "account_id",
+    "google_account_email",
+    "cloud_backup_initialized",
+    "cloud_backup_dirty",
+    "google_refresh_token",
+    "access_token",
+    "refresh_token",
+    "pin_code",
+    "webhook_url",
+}
+
+
+def get_google_user_id(authorization: Optional[str] = Header(default=None)):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Google-Anmeldung erforderlich")
+
+    access_token = authorization[7:].strip()
+    if not access_token:
+        raise HTTPException(status_code=401, detail="Ungültiges Google-Token")
+
+    try:
+        response = requests.get(
+            "https://openidconnect.googleapis.com/v1/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=5,
+        )
+        response.raise_for_status()
+        userinfo = response.json()
+    except (requests.RequestException, ValueError):
+        raise HTTPException(status_code=401, detail="Google-Token ist ungültig")
+
+    google_sub = userinfo.get("sub")
+    if not google_sub:
+        raise HTTPException(status_code=401, detail="Google-Konto konnte nicht bestätigt werden")
+    return google_sub
+
+
 @app.post("/sync")
 def sync_stats(stats: UserStatsSchema, db: Session = Depends(get_db)):
     db_user = db.query(UserStatsDB).filter(UserStatsDB.username == stats.username).first()
@@ -51,6 +104,52 @@ def sync_stats(stats: UserStatsSchema, db: Session = Depends(get_db)):
     db_user.habits_prevented = stats.habits_prevented
     db.commit()
     return {"status": "success"}
+
+
+@app.post("/user/backup")
+def save_user_backup(
+    data: FullUserDataSchema,
+    google_sub: str = Depends(get_google_user_id),
+    db: Session = Depends(get_db),
+):
+    safe_stats = {
+        key: value
+        for key, value in data.stats_data.items()
+        if key not in PRIVATE_BACKUP_KEYS
+    }
+    db_backup = (
+        db.query(FullUserBackupDB)
+        .filter(FullUserBackupDB.google_sub == google_sub)
+        .first()
+    )
+    if db_backup is None:
+        db_backup = FullUserBackupDB(google_sub=google_sub, stats_json="{}")
+        db.add(db_backup)
+    db_backup.stats_json = json.dumps(safe_stats)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Backup konnte nicht gespeichert werden")
+    return {"status": "backup_success"}
+
+
+@app.get("/user/restore")
+def restore_user_backup(
+    google_sub: str = Depends(get_google_user_id),
+    db: Session = Depends(get_db),
+):
+    db_backup = (
+        db.query(FullUserBackupDB)
+        .filter(FullUserBackupDB.google_sub == google_sub)
+        .first()
+    )
+    if db_backup is None:
+        raise HTTPException(status_code=404, detail="Kein Backup gefunden")
+    return {
+        "stats_data": json.loads(db_backup.stats_json),
+    }
+
 
 @app.get("/sync/{username}")
 def get_stats(username: str, db: Session = Depends(get_db)):
