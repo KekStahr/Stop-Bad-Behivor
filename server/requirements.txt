@@ -1,3 +1,8 @@
-fastapi
-uvicorn
-pydantic
+customtkinter
+pynput
+psutil
+pystray
+Pillow
+requests
+matplotlib
+pypresence

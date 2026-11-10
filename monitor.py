@@ -1,17 +1,21 @@
 import threading
-import time
-import os
 import sys
+import os
 import psutil
 from pynput import keyboard
 import tkinter as tk
 from tkinter import messagebox
+import requests
+import requests
+from hosts_blocker import HostsBlocker
 
 class BadBehaviorMonitor:
     def __init__(self, stats_manager, target_processes):
         self.stats_manager = stats_manager
         self.trigger_words = [w.lower() for w in self.stats_manager.get_trigger_words()]
         self.target_processes = target_processes
+        self.hosts_blocker = HostsBlocker()
+        self.hosts_blocker.update_domains(self.trigger_words)
         self.current_typed = ""
         self.listener = None
         self.active_incident = False
@@ -19,6 +23,7 @@ class BadBehaviorMonitor:
 
     def update_trigger_words(self, new_words):
         self.trigger_words = [w.lower() for w in new_words]
+        return self.hosts_blocker.update_domains(self.trigger_words)
 
     def start_monitoring(self):
         self.listener = keyboard.Listener(on_press=self._on_press)
@@ -34,7 +39,6 @@ class BadBehaviorMonitor:
                 self.current_typed += key.char.lower()
                 if len(self.current_typed) > 50:
                     self.current_typed = self.current_typed[-50:]
-                
                 for word in self.trigger_words:
                     if word in self.current_typed:
                         self.current_typed = ""
@@ -47,6 +51,14 @@ class BadBehaviorMonitor:
         self.stats_manager.add_prevented_habit(word)
         self.active_incident = True
         
+        # Webhook an Discord/Partner senden falls hinterlegt
+        webhook = self.stats_manager.get_stats().get("webhook_url", "")
+        if webhook:
+            try:
+                requests.post(webhook, json={"content": f"🚨 **Reşo Alarm**: Nutzer hat Trigger '{word}' versucht!"}, timeout=2)
+            except:
+                pass
+
         self._kill_target_processes()
         
         if self.shutdown_timer:
@@ -54,17 +66,12 @@ class BadBehaviorMonitor:
         self.shutdown_timer = threading.Timer(900, self._execute_shutdown)
         self.shutdown_timer.start()
 
-        ai_message = (
-            f"⚠️ **REŞO: YOU VS YOU – INTERVENTION** ⚠️\n\n"
-            f"Du hast gerade nach '{word}' gesucht oder es getippt. "
-            f"Denk an dein Ziel! Ist es das wirklich wert, deine Disziplin für einen billigen Dopamin-Kick wegzuwerfen? "
-            f"Du bist hier, um stärker zu werden, nicht um alte Fehler zu wiederholen. Konzentriere dich auf deinen Weg!"
-        )
-        
+        ai_message = f"⚠️ **REŞO INTERVENTION** ⚠️\n\nDu hast nach '{word}' gesucht! Konzentriere dich auf dein Ziel."
         try:
             root = tk.Tk()
             root.withdraw()
-            messagebox.showwarning("Reşo : You vs You - ACHTUNG!", ai_message)
+            root.attributes("-topmost", True)
+            messagebox.showwarning("Reşo - Achtung", ai_message)
             root.destroy()
         except:
             pass
@@ -76,7 +83,7 @@ class BadBehaviorMonitor:
                 for target in self.target_processes:
                     if target.lower() in p_name:
                         proc.kill()
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            except:
                 pass
 
     def notify_app_closing(self):
@@ -86,7 +93,5 @@ class BadBehaviorMonitor:
     def _execute_shutdown(self):
         if sys.platform == "win32":
             os.system("shutdown /s /t 1")
-        elif sys.platform == "darwin":
-            os.system("sudo shutdown -h now")
         else:
             os.system("shutdown now")

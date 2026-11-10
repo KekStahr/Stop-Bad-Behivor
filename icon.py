@@ -1,15 +1,12 @@
 from PIL import Image, ImageDraw, ImageFont
 
 def create_app_icon(size=(128, 128)):
-    # Erstellt ein dunkles Icon mit rotem Akzent ("R")
     img = Image.new("RGBA", size, color=(0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     
-    # Hintergrund-Kreis
     margin = 4
     draw.ellipse([margin, margin, size[0]-margin, size[1]-margin], fill="#1f1f1f", outline="#FF4D4D", width=4)
     
-    # Ästhetischer Text "R"
     try:
         font = ImageFont.truetype("arial.ttf", int(size[0] * 0.6))
     except Exception:

@@ -3,8 +3,8 @@ import threading
 
 class FocusTimer:
     def __init__(self, update_callback, finish_callback):
-        self.update_callback = update_callback  # Wird jede Sekunde aufgerufen (verbleibende Zeit)
-        self.finish_callback = finish_callback  # Wenn Timer fertig ist
+        self.update_callback = update_callback
+        self.finish_callback = finish_callback
         self.remaining_seconds = 0
         self.total_duration_minutes = 0
         self.is_running = False

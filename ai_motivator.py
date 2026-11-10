@@ -10,8 +10,6 @@ class MotivationManager:
         self.stats_manager = stats_manager
         self.is_running = False
         self._thread = None
-
-        # Standard-Fallback KI-Nachrichten (nach wissenschaftlicher Verhaltenstherapie gegliedert)
         self.fallback_quotes = [
             "Blick vom Bildschirm weg! 20 Sekunden in die Ferne schauen schützt deine Augen.",
             "Mach kurz Halt. Frage dich: Arbeitest du gerade fokussiert oder weichst du einer Aufgabe aus?",
@@ -23,9 +21,7 @@ class MotivationManager:
         ]
 
     def get_ai_quote(self):
-        """Holt eine dynamische KI-Motivationsnachricht über ein freies LLM-API-Interface oder nimmt ein Fallback."""
         try:
-            # Schneller Aufruf eines leichten KI-Endpunkts (Beispiel: AdviceSlip / Quotable)
             res = requests.get("https://api.adviceslip.com/advice", timeout=3)
             if res.status_code == 200:
                 advice = res.json().get("slip", {}).get("advice", "")
@@ -50,17 +46,11 @@ class MotivationManager:
 
     def _run_loop(self, mode, fixed_mins, min_rand, max_rand):
         while self.is_running:
-            if mode == "random":
-                wait_minutes = random.randint(min_rand, max_rand)
-            else:
-                wait_minutes = fixed_mins
-
-            # Schlafen in 1-Sekunden-Schritten für sauberes Abbrechen
+            wait_minutes = random.randint(min_rand, max_rand) if mode == "random" else fixed_mins
             for _ in range(wait_minutes * 60):
                 if not self.is_running:
                     return
                 time.sleep(1)
-
             if self.is_running:
                 self.show_notification()
 

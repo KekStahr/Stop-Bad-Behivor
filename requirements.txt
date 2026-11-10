@@ -4,3 +4,4 @@ psutil
 pystray
 Pillow
 requests
+matplotlib
