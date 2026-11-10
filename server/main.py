@@ -12,11 +12,22 @@ from fastapi import (
     HTTPException,
     Depends,
     Header,
+    Request,
     WebSocket,
     WebSocketDisconnect,
 )
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, String, Integer, Text
+from sqlalchemy import (
+    create_engine,
+    Column,
+    String,
+    Integer,
+    Text,
+    Float,
+    ForeignKey,
+    UniqueConstraint,
+)
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 
@@ -43,8 +54,181 @@ class FullUserBackupDB(Base):
     stats_json = Column(Text, nullable=False)
 
 
+class ForumPostDB(Base):
+    __tablename__ = "community_forum_posts"
+    id = Column(Integer, primary_key=True, index=True)
+    author_id = Column(String(32), nullable=False, index=True)
+    author_name = Column(String(32), nullable=False)
+    text = Column(Text, nullable=False)
+    media_type = Column(String(32), nullable=True)
+    media_data = Column(Text, nullable=True)
+    created_at = Column(Float, nullable=False, index=True)
+
+
+class ForumCommentDB(Base):
+    __tablename__ = "community_forum_comments"
+    id = Column(Integer, primary_key=True, index=True)
+    post_id = Column(
+        Integer,
+        ForeignKey("community_forum_posts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    author_id = Column(String(32), nullable=False, index=True)
+    author_name = Column(String(32), nullable=False)
+    text = Column(String(1000), nullable=False)
+    created_at = Column(Float, nullable=False)
+
+
+class ForumReactionDB(Base):
+    __tablename__ = "community_forum_reactions"
+    id = Column(Integer, primary_key=True, index=True)
+    post_id = Column(
+        Integer,
+        ForeignKey("community_forum_posts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    author_id = Column(String(32), nullable=False, index=True)
+    emoji = Column(String(16), nullable=False)
+    __table_args__ = (
+        UniqueConstraint("post_id", "author_id", "emoji", name="uq_forum_reaction"),
+    )
+
+
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title="Reşo Cloud & Community API")
+
+MAX_FORUM_MEDIA_SIZE = 500 * 1024
+MAX_FORUM_REQUEST_SIZE = 700 * 1024
+FORUM_ALLOWED_MEDIA = {"image/png", "image/jpeg", "image/gif"}
+FORUM_ALLOWED_REACTIONS = {"❤️", "👍", "😂", "🔥", "🙌", "🎯"}
+forum_write_times = {}
+
+
+@app.middleware("http")
+async def limit_forum_request_size(request: Request, call_next):
+    if (
+        request.url.path.startswith("/community/forum/")
+        or request.url.path == "/community/forum"
+    ):
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                if int(content_length) > MAX_FORUM_REQUEST_SIZE:
+                    return JSONResponse(
+                        status_code=413,
+                        content={"detail": "Der Beitrag ist zu groß."},
+                    )
+            except ValueError:
+                return JSONResponse(
+                    status_code=400,
+                    content={"detail": "Ungültige Anfragegröße."},
+                )
+    return await call_next(request)
+
+
+def _validate_forum_identity(author_id, author_name):
+    if (
+        not isinstance(author_id, str)
+        or len(author_id) != 32
+        or any(character not in "0123456789abcdef" for character in author_id.lower())
+    ):
+        raise HTTPException(status_code=400, detail="Ungültige Community-ID.")
+    if (
+        not isinstance(author_name, str)
+        or not author_name.strip()
+        or len(author_name) > 32
+        or not author_name.isprintable()
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Der Name muss 1 bis 32 Zeichen enthalten.",
+        )
+    return " ".join(author_name.split())
+
+
+def _validate_forum_media(media_type, media_data):
+    if media_type is None and media_data is None:
+        return None, None
+    if media_type not in FORUM_ALLOWED_MEDIA or not isinstance(media_data, str):
+        raise HTTPException(
+            status_code=400,
+            detail="Nur PNG-, JPEG- und GIF-Bilder sind erlaubt.",
+        )
+    if len(media_data) > ((MAX_FORUM_MEDIA_SIZE + 2) // 3) * 4:
+        raise HTTPException(
+            status_code=413,
+            detail="Bilder dürfen höchstens 500 KB groß sein.",
+        )
+    try:
+        decoded = base64.b64decode(media_data, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status_code=400, detail="Ungültige Bilddatei.")
+    if len(decoded) > MAX_FORUM_MEDIA_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail="Bilder dürfen höchstens 500 KB groß sein.",
+        )
+    signatures = {
+        "image/png": b"\x89PNG\r\n\x1a\n",
+        "image/jpeg": b"\xff\xd8\xff",
+        "image/gif": (b"GIF87a", b"GIF89a"),
+    }
+    signature = signatures[media_type]
+    valid_signature = (
+        decoded.startswith(signature)
+        if isinstance(signature, bytes)
+        else any(decoded.startswith(value) for value in signature)
+    )
+    if not valid_signature:
+        raise HTTPException(
+            status_code=400,
+            detail="Dateiinhalt und Bildformat stimmen nicht überein.",
+        )
+    return media_type, media_data
+
+
+def _allow_forum_write(request: Request):
+    now = time.monotonic()
+    address = request.client.host if request.client else "unknown"
+    timestamps = forum_write_times.setdefault(address, deque())
+    while timestamps and now - timestamps[0] > 60:
+        timestamps.popleft()
+    if len(timestamps) >= 20:
+        raise HTTPException(
+            status_code=429,
+            detail="Bitte warte kurz, bevor du weiter postest.",
+        )
+    timestamps.append(now)
+    if len(forum_write_times) > 10000:
+        expired = [
+            key
+            for key, values in forum_write_times.items()
+            if not values or now - values[-1] > 600
+        ]
+        for key in expired:
+            forum_write_times.pop(key, None)
+
+
+class ForumPostSchema(BaseModel):
+    author_id: str
+    author_name: str
+    text: str = ""
+    media_type: Optional[str] = None
+    media_data: Optional[str] = None
+
+
+class ForumCommentSchema(BaseModel):
+    author_id: str
+    author_name: str
+    text: str
+
+
+class ForumReactionSchema(BaseModel):
+    author_id: str
+    emoji: str
+
 
 def get_db():
     db = SessionLocal()
@@ -228,6 +412,187 @@ def get_community_leaderboard(db: Session = Depends(get_db)):
             for rank, user in enumerate(users, start=1)
         ]
     }
+
+
+def _forum_post_payload(post, viewer_id, db):
+    comments = (
+        db.query(ForumCommentDB)
+        .filter(ForumCommentDB.post_id == post.id)
+        .order_by(ForumCommentDB.created_at.asc(), ForumCommentDB.id.asc())
+        .limit(100)
+        .all()
+    )
+    reactions = (
+        db.query(ForumReactionDB)
+        .filter(ForumReactionDB.post_id == post.id)
+        .all()
+    )
+    counts = {}
+    mine = []
+    for reaction in reactions:
+        counts[reaction.emoji] = counts.get(reaction.emoji, 0) + 1
+        if reaction.author_id == viewer_id:
+            mine.append(reaction.emoji)
+    return {
+        "id": post.id,
+        "author_name": post.author_name,
+        "text": post.text,
+        "media_type": post.media_type,
+        "media_data": post.media_data,
+        "created_at": post.created_at,
+        "comments": [
+            {
+                "id": comment.id,
+                "author_name": comment.author_name,
+                "text": comment.text,
+                "created_at": comment.created_at,
+            }
+            for comment in comments
+        ],
+        "reactions": counts,
+        "my_reactions": mine,
+    }
+
+
+@app.get("/community/forum")
+def list_forum_posts(
+    author_id: str = "",
+    limit: int = 20,
+    before: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    if author_id and (
+        len(author_id) != 32
+        or any(character not in "0123456789abcdef" for character in author_id.lower())
+    ):
+        raise HTTPException(status_code=400, detail="Ungültige Community-ID.")
+    limit = min(max(limit, 1), 30)
+    query = db.query(ForumPostDB)
+    if before is not None:
+        query = query.filter(ForumPostDB.id < before)
+    posts = (
+        query.order_by(ForumPostDB.created_at.desc(), ForumPostDB.id.desc())
+        .limit(limit)
+        .all()
+    )
+    return {
+        "posts": [_forum_post_payload(post, author_id, db) for post in posts],
+    }
+
+
+@app.post("/community/forum/posts")
+def create_forum_post(
+    data: ForumPostSchema,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    _allow_forum_write(request)
+    author_name = _validate_forum_identity(data.author_id, data.author_name)
+    text = data.text.replace("\r\n", "\n").strip()
+    if (
+        len(text) > 2000
+        or any(not character.isprintable() and character not in "\n\t" for character in text)
+    ):
+        raise HTTPException(status_code=400, detail="Beiträge dürfen höchstens 2000 Zeichen enthalten.")
+    media_type, media_data = _validate_forum_media(data.media_type, data.media_data)
+    if not text and not media_data:
+        raise HTTPException(status_code=400, detail="Schreibe einen Beitrag oder füge ein Bild hinzu.")
+    post = ForumPostDB(
+        author_id=data.author_id.lower(),
+        author_name=author_name,
+        text=text,
+        media_type=media_type,
+        media_data=media_data,
+        created_at=time.time(),
+    )
+    db.add(post)
+    db.commit()
+    db.refresh(post)
+    return {"post": _forum_post_payload(post, data.author_id.lower(), db)}
+
+
+@app.post("/community/forum/posts/{post_id}/comments")
+def create_forum_comment(
+    post_id: int,
+    data: ForumCommentSchema,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    _allow_forum_write(request)
+    if db.query(ForumPostDB.id).filter(ForumPostDB.id == post_id).first() is None:
+        raise HTTPException(status_code=404, detail="Beitrag nicht gefunden.")
+    author_name = _validate_forum_identity(data.author_id, data.author_name)
+    text = data.text.strip()
+    if (
+        not text
+        or len(text) > 1000
+        or any(not character.isprintable() and character not in "\n\t" for character in text)
+    ):
+        raise HTTPException(status_code=400, detail="Kommentare müssen 1 bis 1000 Zeichen enthalten.")
+    comment = ForumCommentDB(
+        post_id=post_id,
+        author_id=data.author_id.lower(),
+        author_name=author_name,
+        text=text,
+        created_at=time.time(),
+    )
+    db.add(comment)
+    db.commit()
+    db.refresh(comment)
+    return {
+        "comment": {
+            "id": comment.id,
+            "author_name": comment.author_name,
+            "text": comment.text,
+            "created_at": comment.created_at,
+        }
+    }
+
+
+@app.post("/community/forum/posts/{post_id}/reactions")
+def toggle_forum_reaction(
+    post_id: int,
+    data: ForumReactionSchema,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    _allow_forum_write(request)
+    if db.query(ForumPostDB.id).filter(ForumPostDB.id == post_id).first() is None:
+        raise HTTPException(status_code=404, detail="Beitrag nicht gefunden.")
+    _validate_forum_identity(data.author_id, "Community-Mitglied")
+    if data.emoji not in FORUM_ALLOWED_REACTIONS:
+        raise HTTPException(status_code=400, detail="Dieses Emoji ist nicht verfügbar.")
+    reaction = (
+        db.query(ForumReactionDB)
+        .filter(
+            ForumReactionDB.post_id == post_id,
+            ForumReactionDB.author_id == data.author_id.lower(),
+            ForumReactionDB.emoji == data.emoji,
+        )
+        .first()
+    )
+    if reaction is None:
+        db.add(
+            ForumReactionDB(
+                post_id=post_id,
+                author_id=data.author_id.lower(),
+                emoji=data.emoji,
+            )
+        )
+        active = True
+    else:
+        db.delete(reaction)
+        active = False
+    db.commit()
+    reactions = (
+        db.query(ForumReactionDB)
+        .filter(ForumReactionDB.post_id == post_id)
+        .all()
+    )
+    counts = {}
+    for current in reactions:
+        counts[current.emoji] = counts.get(current.emoji, 0) + 1
+    return {"reactions": counts, "active": active}
 
 
 class SupportChatManager:

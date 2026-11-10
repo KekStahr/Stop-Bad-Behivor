@@ -3,6 +3,7 @@ import logging
 import math
 import os
 import random
+import secrets
 import threading
 from datetime import datetime, date, timedelta
 from urllib.parse import urlsplit, urlunsplit
@@ -35,6 +36,9 @@ PRIVATE_BACKUP_KEYS = {
     "stress_detection_enabled",
     "codex_completed",
     "community_chat_settings",
+    "shutdown_deadline_epoch",
+    "community_author_id",
+    "community_author_name",
 }
 
 class StatsManager:
@@ -98,6 +102,9 @@ class StatsManager:
                     data.setdefault("hourly_rate", 25.0)
                     data.setdefault("pin_code", "")
                     data.setdefault("webhook_url", "")
+                    data.setdefault("shutdown_deadline_epoch", None)
+                    data.setdefault("community_author_id", "")
+                    data.setdefault("community_author_name", "")
                     data.setdefault("panic_hotkey", "<ctrl>+<alt>+x")
                     data.setdefault("level", "Disziplin-Novize")
                     return data
@@ -148,6 +155,9 @@ class StatsManager:
             "hourly_rate": 25.0,
             "pin_code": "",
             "webhook_url": "",
+            "shutdown_deadline_epoch": None,
+            "community_author_id": "",
+            "community_author_name": "",
             "panic_hotkey": "<ctrl>+<alt>+x",
             "level": "Disziplin-Novize"
         }
@@ -741,6 +751,54 @@ class StatsManager:
     def set_hourly_rate(self, rate: float):
         self.data["hourly_rate"] = float(rate)
         self.save_data()
+
+    def get_shutdown_deadline(self):
+        deadline = self.data.get("shutdown_deadline_epoch")
+        if deadline is None:
+            return None
+        if (
+            isinstance(deadline, bool)
+            or not isinstance(deadline, (int, float))
+            or not math.isfinite(deadline)
+        ):
+            logging.warning("Ungültiger gespeicherter Beenden-Countdown wurde ignoriert.")
+            return None
+        return float(deadline)
+
+    def set_shutdown_deadline(self, deadline):
+        if deadline is not None and (
+            isinstance(deadline, bool)
+            or not isinstance(deadline, (int, float))
+            or not math.isfinite(deadline)
+        ):
+            raise ValueError("Der Beenden-Countdown muss ein gültiger Zeitstempel sein.")
+        self.data["shutdown_deadline_epoch"] = deadline
+        self._write_local_data()
+
+    def get_community_identity(self):
+        author_id = self.data.get("community_author_id")
+        if (
+            not isinstance(author_id, str)
+            or len(author_id) != 32
+            or any(character not in "0123456789abcdef" for character in author_id)
+        ):
+            author_id = secrets.token_hex(16)
+            self.data["community_author_id"] = author_id
+        author_name = self.data.get("community_author_name")
+        if not isinstance(author_name, str) or not author_name.strip():
+            author_name = f"Gast-{author_id[:6]}"
+            self.data["community_author_name"] = author_name
+        self._write_local_data()
+        return author_id, author_name
+
+    def set_community_author_name(self, author_name):
+        if not isinstance(author_name, str):
+            raise TypeError("Der Community-Name muss Text sein.")
+        author_name = " ".join(author_name.split())
+        if not author_name or len(author_name) > 32 or not author_name.isprintable():
+            raise ValueError("Der Name muss 1 bis 32 druckbare Zeichen enthalten.")
+        self.data["community_author_name"] = author_name
+        self._write_local_data()
 
     def get_hourly_rate(self) -> float:
         return float(self.data.get("hourly_rate", 25.0))

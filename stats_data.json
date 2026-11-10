@@ -1,7 +1,7 @@
 {
     "timer_activations": 0,
     "total_focus_minutes": 0,
-    "habits_prevented": 1,
+    "habits_prevented": 2,
     "streak": 1,
     "last_active_date": "2026-11-10",
     "trigger_words": [
@@ -13,14 +13,18 @@
         "stri"
     ],
     "longest_streak": 1,
-    "trigger_stats": {},
+    "trigger_stats": {
+        "stri": 1
+    },
     "daily_activity": {},
-    "incident_hours": {},
+    "incident_hours": {
+        "16:00 Uhr": 1
+    },
     "hourly_rate": 0.1,
     "pin_code": "",
     "webhook_url": "",
     "panic_hotkey": "<ctrl>+<alt>+x",
-    "level": "Disziplin-Novize",
+    "level": "\ud83c\udf31 Willens-Anw\u00e4rter",
     "daily_moods": {},
     "monthly_challenge_badges": [],
     "savings_goal": {
@@ -41,10 +45,25 @@
     },
     "cloud_backup_initialized": false,
     "cloud_backup_dirty": false,
-    "reframing_entries": [],
-    "emotion_stats": {},
-    "weekday_hour_matrix": {},
-    "daily_incidents": {},
+    "reframing_entries": [
+        {
+            "timestamp": "2026-11-10T16:47:58",
+            "emotion": "Einsamkeit",
+            "trigger": "stri",
+            "weight": 3.0
+        }
+    ],
+    "emotion_stats": {
+        "Einsamkeit": 1
+    },
+    "weekday_hour_matrix": {
+        "1": {
+            "16": 1
+        }
+    },
+    "daily_incidents": {
+        "2026-11-10": 1
+    },
     "relapse_reflections": [],
     "whitelist_mode_enabled": false,
     "whitelisted_apps": [
@@ -56,5 +75,14 @@
         "pycharm64.exe",
         "notepad.exe",
         "resoapp.exe"
-    ]
+    ],
+    "streak_start_iso": "2026-11-10T16:45:43.514192",
+    "last_trigger_at": "2026-11-10T16:46:33",
+    "last_trigger_category": "medium",
+    "shutdown_deadline_epoch": null,
+    "community_author_id": "f707e72796c2ce866304fbce2455f04f",
+    "community_author_name": "Kek",
+    "ai_pause_min": 5,
+    "ai_pause_max": 10,
+    "ai_pause_preset": "strict"
 }

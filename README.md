@@ -1,13 +1,16 @@
 # Stop-Bad-Behivor
 This is a program that is very effective at stopping you from engaging in bad habits.
 
-## Voluntary shutdown countdown
+## Tray and shutdown countdown
 
-Closing the main window or choosing **Beenden** in the tray starts a 30-minute
-shutdown countdown after confirmation. The app remains available in the tray,
-and the countdown can be cancelled there at any time. This is a normal,
-user-controlled delay: the app does not restart itself if it is closed by the
-operating system or Task Manager.
+Closing the main window minimizes the app to the system tray. Choosing
+**Beenden (30 Min. Wartezeit)** in the tray starts a 30-minute countdown; the app
+stays active in the background and closes when the countdown ends. The deadline
+is saved locally, so the remaining time resumes if the app is restarted before
+the countdown expires. The countdown is shown on the Home tab and can be
+cancelled there; the app remains usable while it runs. Windows or a user with
+access to the local app data can still terminate or modify the app or change
+the system clock; this is not an operating-system-enforced lock.
 
 ## Google Cloud Backup
 
@@ -53,6 +56,17 @@ to 500 KB can be relayed; they are not persisted by the chat service. The server
 operator may see connection metadata. The chat is not a crisis or professional
 support service. Message size, queue size, and per-connection send rate are
 limited.
+
+## Community forum
+
+The Community tab is a public pseudonymous forum. Posts and comments are stored
+by the configured community API and are visible to other app users. It supports
+text, PNG/JPEG images and GIF files up to 500 KB, comments, stickers and emoji
+reactions. The app creates a local pseudonymous identity; forum names are not
+verified accounts, and anyone with access to the API can post. The forum has no
+moderation tools yet. Do not share personal or sensitive information. Deploy
+the updated `server` API to enable the forum. Animated GIF previews are shown
+in the desktop feed.
 
 ## Analytics models
 

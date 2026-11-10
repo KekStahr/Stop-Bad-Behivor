@@ -6,6 +6,7 @@ import sys
 import time
 import math
 import queue
+from pathlib import Path
 import base64
 import binascii
 import io
@@ -24,21 +25,33 @@ from icon import create_app_icon
 from ai_motivator import MotivationManager
 from discord_rpc import DiscordRPCManager
 from autostart import is_autostart_enabled, setup_autostart
+from community_forum import CommunityForum
 
 # Design-Konfiguration
 ctk.set_appearance_mode("Dark")
-ctk.set_default_color_theme("dark-blue")
+ctk.set_default_color_theme(str(Path(__file__).with_name("apple_dark.json")))
+ctk.set_widget_scaling(1.2)
 
-# Farbpalette für echtes Premium-Feeling
-BG_DARK = "#121212"
-CARD_BG = "#1E1E24"
-CARD_BORDER = "#2A2A35"
-ACCENT_RED = "#FF4D4D"
-ACCENT_GREEN = "#2E7D32"
-ACCENT_ORANGE = "#FF9800"
-ACCENT_BLUE = "#00ADB5"
-TEXT_PRIMARY = "#FFFFFF"
-TEXT_SECONDARY = "#A0A0AA"
+BG_DARK = "#111113"
+CARD_BG = "#1C1C1E"
+CARD_BORDER = "#38383A"
+ACCENT_RED = "#FF453A"
+ACCENT_GREEN = "#30D158"
+ACCENT_ORANGE = "#FF9F0A"
+ACCENT_BLUE = "#0A84FF"
+TEXT_PRIMARY = "#F5F5F7"
+TEXT_SECONDARY = "#A1A1A6"
+
+plt.rcParams.update(
+    {
+        "font.family": "sans-serif",
+        "font.sans-serif": ["Segoe UI", "Arial", "DejaVu Sans"],
+        "text.color": TEXT_SECONDARY,
+        "axes.labelcolor": TEXT_SECONDARY,
+        "xtick.color": TEXT_SECONDARY,
+        "ytick.color": TEXT_SECONDARY,
+    }
+)
 
 
 class SupportChatWindow(ctk.CTkToplevel):
@@ -80,7 +93,7 @@ class SupportChatWindow(ctk.CTkToplevel):
                 "Verbindungsmetadaten sehen. Teile keine persönlichen Angaben. "
                 "Kein Krisen- oder professioneller Beratungsdienst."
             ),
-            font=ctk.CTkFont(size=10),
+            font=ctk.CTkFont(size=12),
             text_color=TEXT_SECONDARY,
             wraplength=470,
             justify="center",
@@ -98,7 +111,7 @@ class SupportChatWindow(ctk.CTkToplevel):
         ctk.CTkLabel(
             self,
             text="Nachrichten werden nicht in der App gespeichert.",
-            font=ctk.CTkFont(size=10),
+            font=ctk.CTkFont(size=12),
             text_color=TEXT_SECONDARY,
         ).pack()
 
@@ -468,8 +481,8 @@ class ResoApp(ctk.CTk):
         super().__init__()
 
         self.title("Reşo : You vs You")
-        self.geometry("950x780")
-        self.minsize(800, 650)
+        self.geometry("1120x900")
+        self.minsize(960, 760)
         self.resizable(True, True)
         self.configure(fg_color=BG_DARK)
         self.start_hidden = start_hidden
@@ -497,6 +510,20 @@ class ResoApp(ctk.CTk):
         self.shutdown_remaining_seconds = 0
         self.shutdown_deadline = 0.0
         self.shutdown_after_id = None
+        self.ai_pauses_enabled = bool(
+            self.stats_manager.get_stats().get("ai_pauses_enabled", False)
+        )
+        self.ai_pause_min = int(self.stats_manager.get_stats().get("ai_pause_min", 10))
+        self.ai_pause_max = int(self.stats_manager.get_stats().get("ai_pause_max", 20))
+        persisted_deadline = self.stats_manager.get_shutdown_deadline()
+        if persisted_deadline is not None:
+            remaining = persisted_deadline - time.time()
+            if remaining > 0:
+                self.is_shutting_down = True
+                self.shutdown_deadline = time.monotonic() + remaining
+                self.withdraw()
+            else:
+                self.stats_manager.set_shutdown_deadline(None)
 
         self.target_processes = ["chrome.exe", "msedge.exe", "firefox.exe", "discord.exe"]
         self.monitor = BadBehaviorMonitor(self.stats_manager, self.target_processes)
@@ -513,13 +540,17 @@ class ResoApp(ctk.CTk):
         self.setup_tray()
 
         self.create_widgets()
+        self._apply_apple_widget_style()
         self.monitor.on_trigger_callback = self.handle_trigger_event
         self.monitor.on_stress_callback = self.handle_stress_event
         self.monitor.start_monitoring()
         self.update_stats_display()
         self.refresh_stoic_quote()
         self._streak_ticker_id = self.after(1000, self._live_ticker)
-        if not self.start_hidden:
+        if self.is_shutting_down:
+            self.after(0, self._show_home_hub)
+            self.after(0, self._run_shutdown_countdown)
+        if not self.start_hidden and not self.is_shutting_down:
             self.after(800, self.show_startup_prompts)
         self.refresh_community_stats()
         self.refresh_community_leaderboard()
@@ -532,14 +563,13 @@ class ResoApp(ctk.CTk):
         # Globaler Hotkey für den Panic-Button starten
         self.setup_panic_hotkey_listener()
 
-        self.protocol("WM_DELETE_WINDOW", self.request_close_app)
+        self.protocol("WM_DELETE_WINDOW", self.hide_to_tray)
 
     def setup_tray(self):
         menu = pystray.Menu(
             pystray.MenuItem("Reşo öffnen", self.show_from_tray, default=True),
             pystray.MenuItem("25 Min. Fokus Quick-Start", lambda: self.start_timer_action(25)),
             pystray.MenuItem("Beenden (30 Min. Wartezeit)", self.quit_app),
-            pystray.MenuItem("Schließ-Countdown abbrechen", self.cancel_shutdown_from_tray),
         )
         self.tray_icon = pystray.Icon("ResoApp", self.pil_icon, "Reşo : You vs You", menu)
         threading.Thread(target=self.tray_icon.run, daemon=True).start()
@@ -547,62 +577,19 @@ class ResoApp(ctk.CTk):
     def hide_to_tray(self):
         self.withdraw()
 
-    def request_close_app(self):
-        from tkinter import messagebox
-
+    def _begin_shutdown_countdown(self):
         if self.is_shutting_down:
-            remaining = max(
-                0,
-                int(self.shutdown_deadline - time.monotonic()),
-            )
-            messagebox.showinfo(
-                "Anti-Rage-Quit-Schutz",
-                f"Der Schließ-Countdown läuft noch {remaining // 60} Minuten "
-                f"und {remaining % 60} Sekunden. Du kannst ihn im Tray abbrechen.",
-                parent=self,
-            )
-            return
-        if not messagebox.askyesno(
-            "Schließ-Countdown starten?",
-            "Reşo bleibt während eines 30-minütigen Countdowns aktiv und wird "
-            "danach beendet. Du kannst den Countdown jederzeit über das Tray-Menü "
-            "„Schließ-Countdown abbrechen“ stoppen.\n\nJetzt starten?",
-            parent=self,
-        ):
+            self._show_home_hub()
             return
 
         self.is_shutting_down = True
         self.shutdown_deadline = time.monotonic() + 30 * 60
-        self.withdraw()
+        self.stats_manager.set_shutdown_deadline(time.time() + 30 * 60)
+        self._show_home_hub()
         self._run_shutdown_countdown()
 
     def quit_app(self, icon=None, item=None):
-        self.after(0, self.request_close_app)
-
-    def cancel_shutdown_from_tray(self, icon=None, item=None):
-        self.after(0, self.cancel_shutdown_countdown)
-
-    def cancel_shutdown_countdown(self):
-        if not self.is_shutting_down:
-            return
-        if self.shutdown_after_id is not None:
-            self.after_cancel(self.shutdown_after_id)
-            self.shutdown_after_id = None
-        self.is_shutting_down = False
-        self.shutdown_deadline = 0.0
-        self.shutdown_remaining_seconds = 0
-        if self.tray_icon is not None:
-            self.tray_icon.title = "Reşo : You vs You"
-        self.deiconify()
-        self.lift()
-        self.focus_force()
-        from tkinter import messagebox
-
-        messagebox.showinfo(
-            "Countdown abgebrochen",
-            "Reşo bleibt geöffnet und der Schutz läuft weiter.",
-            parent=self,
-        )
+        self.after(0, self._begin_shutdown_countdown)
 
     def _run_shutdown_countdown(self):
         if not self.is_shutting_down:
@@ -614,18 +601,51 @@ class ResoApp(ctk.CTk):
         if self.tray_icon is not None:
             minutes, seconds = divmod(self.shutdown_remaining_seconds, 60)
             self.tray_icon.title = (
-                f"Reşo — Beenden in {minutes:02d}:{seconds:02d} "
-                "(im Tray abbrechbar)"
+                f"Reşo — Beenden in {minutes:02d}:{seconds:02d}"
             )
+        self._update_shutdown_status()
         if self.shutdown_remaining_seconds == 0:
             self.execute_final_quit()
             return
         self.shutdown_after_id = self.after(1000, self._run_shutdown_countdown)
 
+    def _update_shutdown_status(self):
+        if not hasattr(self, "shutdown_status_frame"):
+            return
+        if not self.is_shutting_down:
+            self.shutdown_status_frame.pack_forget()
+            return
+        minutes, seconds = divmod(self.shutdown_remaining_seconds, 60)
+        self.shutdown_status_label.configure(
+            text=f"Das Programm wird in {minutes:02d}:{seconds:02d} beendet."
+        )
+        if not self.shutdown_status_frame.winfo_manager():
+            self.shutdown_status_frame.pack(
+                fill="x",
+                padx=10,
+                pady=(0, 8),
+                before=self.home_metrics_frame,
+            )
+
+    def cancel_shutdown_countdown(self):
+        if not self.is_shutting_down:
+            return
+        if self.shutdown_after_id is not None:
+            self.after_cancel(self.shutdown_after_id)
+            self.shutdown_after_id = None
+        self.is_shutting_down = False
+        self.shutdown_deadline = 0.0
+        self.shutdown_remaining_seconds = 0
+        self.stats_manager.set_shutdown_deadline(None)
+        if self.tray_icon is not None:
+            self.tray_icon.title = "Reşo : You vs You"
+        self._update_shutdown_status()
+
     def execute_final_quit(self):
         self.is_shutting_down = False
         self.shutdown_deadline = 0.0
         self.shutdown_after_id = None
+        self.stats_manager.set_shutdown_deadline(None)
         if self.tray_icon:
             self.tray_icon.stop()
         if self._streak_ticker_id is not None:
@@ -638,53 +658,79 @@ class ResoApp(ctk.CTk):
         self.destroy()
 
     def show_from_tray(self, icon=None, item=None):
+        self.after(0, self._show_home_hub)
         if self.is_shutting_down:
-            self.after(0, self._show_shutdown_status)
             return
-        self.deiconify()
-        self.lift()
-        self.focus_force()
         if not self.stats_manager.get_stats().get("codex_completed", False):
             self.after(200, self.show_startup_prompts)
         else:
             self.after(200, self.check_sunday_report_popup)
 
-    def _show_shutdown_status(self):
-        if not self.is_shutting_down:
-            self.show_from_tray()
-            return
+    def _show_home_hub(self):
         self.deiconify()
         self.lift()
         self.focus_force()
-        from tkinter import messagebox
+        self.tabview.set("🏠 Home")
+        self._update_shutdown_status()
 
-        remaining = max(0, int(self.shutdown_deadline - time.monotonic()))
-        messagebox.showinfo(
-            "Anti-Rage-Quit-Schutz",
-            f"Der Schließ-Countdown läuft noch {remaining // 60} Minuten "
-            f"und {remaining % 60} Sekunden. Im Tray-Menü kannst du ihn abbrechen.",
-            parent=self,
-        )
-        self.withdraw()
+    def _apply_apple_widget_style(self, root=None):
+        root = root or self
+        for widget in root.winfo_children():
+            if isinstance(widget, ctk.CTkBaseClass):
+                try:
+                    font = widget.cget("font")
+                except ValueError:
+                    font = None
+                if isinstance(font, ctk.CTkFont) and font.cget("size") < 13:
+                    widget.configure(
+                        font=ctk.CTkFont(
+                            family=font.cget("family"),
+                            size=13,
+                            weight=font.cget("weight"),
+                            slant=font.cget("slant"),
+                            underline=font.cget("underline"),
+                            overstrike=font.cget("overstrike"),
+                        )
+                    )
+
+                if type(widget) is ctk.CTkFrame:
+                    if widget.cget("fg_color") != "transparent":
+                        widget.configure(
+                            corner_radius=max(16, widget.cget("corner_radius")),
+                            border_color=CARD_BORDER,
+                            border_width=max(1, widget.cget("border_width")),
+                        )
+                elif isinstance(widget, ctk.CTkButton):
+                    widget.configure(
+                        corner_radius=max(12, widget.cget("corner_radius"))
+                    )
+
+            self._apply_apple_widget_style(widget)
 
     def create_widgets(self):
         # Header Area
         self.header_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.header_frame.pack(fill="x", padx=25, pady=(20, 10))
+        self.header_frame.pack(fill="x", padx=32, pady=(24, 14))
 
         self.title_label = ctk.CTkLabel(
             self.header_frame, 
             text="REŞO : YOU VS YOU", 
-            font=ctk.CTkFont(size=26, weight="bold"), 
-            text_color=ACCENT_RED
+            font=ctk.CTkFont(size=30, weight="bold"),
+            text_color=TEXT_PRIMARY
         )
         self.title_label.pack(anchor="w")
+        ctk.CTkLabel(
+            self.header_frame,
+            text="DEIN PERSÖNLICHER FOKUSRAUM",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=TEXT_SECONDARY,
+        ).pack(anchor="w", pady=(1, 4))
 
         self.lbl_level = ctk.CTkLabel(
             self.header_frame, 
             text=f"Rang: {self.stats_manager.get_stats().get('level', 'Disziplin-Novize')}", 
-            font=ctk.CTkFont(size=13, weight="bold"), 
-            text_color=ACCENT_ORANGE
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=ACCENT_BLUE
         )
         self.lbl_level.pack(anchor="w", pady=(2, 0))
 
@@ -693,19 +739,21 @@ class ResoApp(ctk.CTk):
             self, 
             width=810, 
             height=630, 
-            fg_color=BG_DARK, 
+            fg_color="transparent",
+            corner_radius=18,
             segmented_button_fg_color=CARD_BG,
-            segmented_button_selected_color=ACCENT_RED,
-            segmented_button_selected_hover_color="#CC3D3D",
+            segmented_button_selected_color=ACCENT_BLUE,
+            segmented_button_selected_hover_color="#0066CC",
             segmented_button_unselected_color=CARD_BG,
             segmented_button_unselected_hover_color=CARD_BORDER,
+            segmented_button_font=ctk.CTkFont(size=14, weight="bold"),
             command=self.on_tab_changed,
         )
-        self.tabview.pack(fill="both", expand=True, pady=(0, 15), padx=20)
+        self.tabview.pack(fill="both", expand=True, pady=(0, 20), padx=26)
 
         self.tab_home = self.tabview.add("🏠 Home")
-        self.tab_timer = self.tabview.add("⏱️ Fokus Timer")
-        self.tab_pause = self.tabview.add("🧠 KI-Pausen")
+        self.tab_timer = self.tabview.add("⏱️ Fokus & Pausen")
+        self.tab_community = self.tabview.add("🤝 Community")
         self.tab_stats = self.tabview.add("📊 Analytics")
         self.tab_settings = self.tabview.add("⚙️ Einstellungen")
 
@@ -736,6 +784,40 @@ class ResoApp(ctk.CTk):
             text_color=TEXT_SECONDARY,
         )
         self.lbl_home_streak.pack(anchor="w", padx=20, pady=(0, 15))
+
+        self.shutdown_status_frame = ctk.CTkFrame(
+            self.home_scroll,
+            fg_color="#2C2520",
+            corner_radius=14,
+            border_color=ACCENT_ORANGE,
+            border_width=1,
+        )
+        shutdown_status_content = ctk.CTkFrame(
+            self.shutdown_status_frame,
+            fg_color="transparent",
+        )
+        shutdown_status_content.pack(
+            fill="x",
+            padx=18,
+            pady=14,
+        )
+        self.shutdown_status_label = ctk.CTkLabel(
+            shutdown_status_content,
+            text="Das Programm wird in 30:00 beendet.",
+            font=ctk.CTkFont(size=17, weight="bold"),
+            text_color=ACCENT_ORANGE,
+            anchor="w",
+        )
+        self.shutdown_status_label.pack(side="left", fill="x", expand=True)
+        ctk.CTkButton(
+            shutdown_status_content,
+            text="Countdown stoppen",
+            width=190,
+            height=40,
+            fg_color=ACCENT_GREEN,
+            hover_color="#24A847",
+            command=self.cancel_shutdown_countdown,
+        ).pack(side="right", padx=(12, 0))
 
         self.home_metrics_frame = ctk.CTkFrame(
             self.home_scroll,
@@ -862,7 +944,10 @@ class ResoApp(ctk.CTk):
         ).pack(fill="x", padx=20, pady=(0, 15))
 
         # --- TAB 1: TIMER & PANIC ---
-        timer_card = ctk.CTkFrame(self.tab_timer, fg_color=CARD_BG, corner_radius=15, border_color=CARD_BORDER, border_width=1)
+        timer_scroll = ctk.CTkScrollableFrame(self.tab_timer, fg_color="transparent")
+        timer_scroll.pack(fill="both", expand=True, padx=5, pady=5)
+
+        timer_card = ctk.CTkFrame(timer_scroll, fg_color=CARD_BG, corner_radius=15, border_color=CARD_BORDER, border_width=1)
         timer_card.pack(fill="both", expand=True, padx=15, pady=15)
 
         self.timer_label = ctk.CTkLabel(timer_card, text="25:00", font=ctk.CTkFont(size=72, weight="bold"), text_color=TEXT_PRIMARY)
@@ -917,10 +1002,10 @@ class ResoApp(ctk.CTk):
         ).pack(pady=(0, 12))
 
         # --- TAB 2: KI-PAUSEN ---
-        pause_card = ctk.CTkFrame(self.tab_pause, fg_color=CARD_BG, corner_radius=15, border_color=CARD_BORDER, border_width=1)
-        pause_card.pack(fill="both", expand=True, padx=15, pady=15)
+        pause_card = ctk.CTkFrame(timer_scroll, fg_color=CARD_BG, corner_radius=15, border_color=CARD_BORDER, border_width=1)
+        pause_card.pack(fill="x", padx=15, pady=(0, 15))
 
-        lbl_pause_title = ctk.CTkLabel(pause_card, text="Bildschirm-Pausen & KI-Motivator", font=ctk.CTkFont(size=18, weight="bold"))
+        lbl_pause_title = ctk.CTkLabel(pause_card, text="KI-Pausen während des Fokus-Timers", font=ctk.CTkFont(size=18, weight="bold"))
         lbl_pause_title.pack(anchor="w", padx=25, pady=(20, 15))
 
         preset_frame = ctk.CTkFrame(pause_card, fg_color="transparent")
@@ -932,11 +1017,17 @@ class ResoApp(ctk.CTk):
 
         settings_box = ctk.CTkFrame(pause_card, fg_color="#16161A", corner_radius=10)
         settings_box.pack(fill="x", padx=25, pady=20)
-        ctk.CTkRadioButton(settings_box, text="Zufälliger Pausen-Bereich (10 - 20 Min)", variable=ctk.StringVar(value="random"), value="random", fg_color=ACCENT_BLUE).pack(anchor="w", padx=20, pady=20)
+        self.lbl_pause_interval = ctk.CTkLabel(
+            settings_box,
+            text="",
+            font=ctk.CTkFont(size=14),
+            text_color=TEXT_SECONDARY,
+        )
+        self.lbl_pause_interval.pack(anchor="w", padx=24, pady=20)
         
         self.btn_toggle_motivation = ctk.CTkButton(
             pause_card, 
-            text="KI-Erinnerungen aktivieren", 
+            text="",
             font=ctk.CTkFont(size=15, weight="bold"),
             fg_color=ACCENT_BLUE, 
             hover_color="#008B9B", 
@@ -946,6 +1037,23 @@ class ResoApp(ctk.CTk):
             command=self.toggle_motivation
         )
         self.btn_toggle_motivation.pack(pady=15)
+        ctk.CTkLabel(
+            pause_card,
+            text="Die Erinnerungen laufen nur während einer aktiven Fokus-Session.",
+            font=ctk.CTkFont(size=12),
+            text_color=TEXT_SECONDARY,
+        ).pack(pady=(0, 14))
+        self.apply_preset(
+            self.stats_manager.get_stats().get("ai_pause_preset", "medium"),
+            persist=False,
+        )
+        self._update_motivation_button()
+
+        self.community_forum = CommunityForum(
+            self.tab_community,
+            stats_manager=self.stats_manager,
+        )
+        self.community_forum.pack(fill="both", expand=True, padx=5, pady=5)
 
         # --- TAB 3: STATISTIK & ANALYTICS ---
         self.stats_scroll = ctk.CTkScrollableFrame(self.tab_stats, fg_color="transparent")
@@ -1733,6 +1841,8 @@ class ResoApp(ctk.CTk):
             self.words_scroll_frame.pack(padx=20, pady=15)
             self.refresh_words_list()
 
+        self._apply_apple_widget_style(self.tab_settings)
+
     def toggle_autostart(self):
         enabled = self.autostart_switch.get() == 1
         if setup_autostart(enabled):
@@ -1947,7 +2057,7 @@ class ResoApp(ctk.CTk):
             
         fig, ax = plt.subplots(figsize=(6.8, 1.4), dpi=90)
         fig.patch.set_facecolor(CARD_BG)
-        ax.set_facecolor('#121212')
+        ax.set_facecolor(CARD_BG)
 
         stats_data = self.stats_manager.get_stats()
         daily_data = stats_data.get("daily_activity", {})
@@ -2108,15 +2218,56 @@ class ResoApp(ctk.CTk):
             )
         )
 
-    def apply_preset(self, t): pass
-
     def toggle_motivation(self):
-        if self.motivation_manager.is_running:
-            self.motivation_manager.stop_scheduler()
-            self.btn_toggle_motivation.configure(text="KI-Erinnerungen aktivieren", fg_color=ACCENT_BLUE)
+        self.ai_pauses_enabled = not self.ai_pauses_enabled
+        self.stats_manager.data["ai_pauses_enabled"] = self.ai_pauses_enabled
+        self.stats_manager.save_data()
+        if self.ai_pauses_enabled and self.focus_timer.is_running:
+            self.motivation_manager.start_scheduler(
+                mode="random",
+                min_rand=self.ai_pause_min,
+                max_rand=self.ai_pause_max,
+            )
         else:
-            self.motivation_manager.start_scheduler(mode="random", min_rand=10, max_rand=20)
-            self.btn_toggle_motivation.configure(text="KI-Erinnerungen aktiv (Stoppen)", fg_color=ACCENT_RED)
+            self.motivation_manager.stop_scheduler()
+        self._update_motivation_button()
+
+    def _update_motivation_button(self):
+        if not hasattr(self, "btn_toggle_motivation"):
+            return
+        enabled = self.ai_pauses_enabled
+        self.btn_toggle_motivation.configure(
+            text="KI-Pausen: aktiviert" if enabled else "KI-Pausen: deaktiviert",
+            fg_color=ACCENT_GREEN if enabled else ACCENT_BLUE,
+        )
+
+    def apply_preset(self, preset, persist=True):
+        intervals = {
+            "light": (20, 30, "Sanft"),
+            "medium": (10, 20, "Ausgewogen"),
+            "strict": (5, 10, "Häufig"),
+        }
+        if preset not in intervals:
+            preset = "medium"
+        self.ai_pause_min, self.ai_pause_max, label = intervals[preset]
+        if persist:
+            self.stats_manager.data["ai_pause_min"] = self.ai_pause_min
+            self.stats_manager.data["ai_pause_max"] = self.ai_pause_max
+            self.stats_manager.data["ai_pause_preset"] = preset
+            self.stats_manager.save_data()
+        if hasattr(self, "lbl_pause_interval"):
+            self.lbl_pause_interval.configure(
+                text=(
+                    f"{label}: zufällige Erinnerung alle "
+                    f"{self.ai_pause_min}–{self.ai_pause_max} Minuten"
+                )
+            )
+        if self.ai_pauses_enabled and self.focus_timer.is_running:
+            self.motivation_manager.start_scheduler(
+                mode="random",
+                min_rand=self.ai_pause_min,
+                max_rand=self.ai_pause_max,
+            )
 
     def refresh_words_list(self):
         for w in self.words_scroll_frame.winfo_children(): w.destroy()
@@ -2200,6 +2351,12 @@ class ResoApp(ctk.CTk):
         if not self.focus_timer.is_running:
             mins = custom_mins if custom_mins else int(self.time_slider.get())
             self.focus_timer.start(mins)
+            if self.ai_pauses_enabled:
+                self.motivation_manager.start_scheduler(
+                    mode="random",
+                    min_rand=self.ai_pause_min,
+                    max_rand=self.ai_pause_max,
+                )
             self.btn_start_timer.configure(text="Fokus läuft...", fg_color=ACCENT_RED, hover_color="#CC3D3D")
             self.discord_rpc.update_presence("Im Fokus-Modus", f"Konzentriert für {mins} Min.")
             if self.whitelist_enabled:
@@ -2213,6 +2370,7 @@ class ResoApp(ctk.CTk):
         self.after(0, lambda: self.timer_label.configure(text=time_str))
 
     def on_timer_finished(self, minutes):
+        self.motivation_manager.stop_scheduler()
         self.stats_manager.add_timer_session(minutes, mood_score=2)
         self.after(0, self.reset_timer_ui)
         self.after(0, self.update_stats_display)
@@ -2277,6 +2435,7 @@ class ResoApp(ctk.CTk):
         ).pack(side="left", expand=True, padx=2)
 
     def reset_timer_ui(self):
+        self.motivation_manager.stop_scheduler()
         self.monitor.stop_whitelist_enforcement()
         self.btn_start_timer.configure(text="Fokus starten", fg_color=ACCENT_GREEN, hover_color="#1B5E20")
         val = int(self.time_slider.get())
@@ -2461,6 +2620,8 @@ class ResoApp(ctk.CTk):
         if self.tabview.get() in {"🏠 Home", "📊 Analytics"}:
             self.refresh_stoic_quote()
             self.update_monthly_challenge_display()
+        elif self.tabview.get() == "🤝 Community":
+            self.community_forum.refresh_posts()
 
     def refresh_stoic_quote(self):
         quote = self.stats_manager.get_stoic_quote()
@@ -2718,13 +2879,13 @@ class ResoApp(ctk.CTk):
         ax.set_yticklabels(
             ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
             color=TEXT_SECONDARY,
-            fontsize=8,
+            fontsize=10,
         )
         ax.set_xticks(range(0, 24, 3))
         ax.set_xticklabels(
             [f"{hour}h" for hour in range(0, 24, 3)],
             color=TEXT_SECONDARY,
-            fontsize=8,
+            fontsize=10,
         )
         ax.tick_params(length=0)
         ax.spines["top"].set_visible(False)
@@ -2793,9 +2954,9 @@ class ResoApp(ctk.CTk):
         )
         ax.set_xlim(0, 120)
         ax.set_ylim(80, peak + 120)
-        ax.set_xlabel("Vergangene Zeit (Minuten)", color=TEXT_SECONDARY, fontsize=9)
-        ax.set_ylabel("Modellwert (%)", color=TEXT_SECONDARY, fontsize=9)
-        ax.tick_params(colors=TEXT_SECONDARY, labelsize=8)
+        ax.set_xlabel("Vergangene Zeit (Minuten)", color=TEXT_SECONDARY, fontsize=10)
+        ax.set_ylabel("Modellwert (%)", color=TEXT_SECONDARY, fontsize=10)
+        ax.tick_params(colors=TEXT_SECONDARY, labelsize=10)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
         ax.spines["left"].set_color(CARD_BORDER)
@@ -2804,7 +2965,7 @@ class ResoApp(ctk.CTk):
             facecolor=CARD_BG,
             edgecolor="none",
             labelcolor=TEXT_PRIMARY,
-            fontsize=8,
+            fontsize=9,
             loc="upper right",
         )
         fig.tight_layout()
@@ -2860,12 +3021,12 @@ class ResoApp(ctk.CTk):
         ax.set_title(
             "Verzögerung (Tage) vs. modellierter Wert",
             color=TEXT_SECONDARY,
-            fontsize=9,
+            fontsize=11,
             loc="left",
         )
-        ax.set_xlabel("Tage", color=TEXT_SECONDARY, fontsize=8)
-        ax.set_ylabel("Wert", color=TEXT_SECONDARY, fontsize=8)
-        ax.tick_params(colors=TEXT_SECONDARY, labelsize=8)
+        ax.set_xlabel("Tage", color=TEXT_SECONDARY, fontsize=10)
+        ax.set_ylabel("Wert", color=TEXT_SECONDARY, fontsize=10)
+        ax.tick_params(colors=TEXT_SECONDARY, labelsize=10)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
         ax.spines["left"].set_color(CARD_BORDER)
@@ -2874,7 +3035,7 @@ class ResoApp(ctk.CTk):
             facecolor=CARD_BG,
             edgecolor="none",
             labelcolor=TEXT_PRIMARY,
-            fontsize=8,
+            fontsize=9,
             loc="upper right",
         )
         fig.tight_layout()
