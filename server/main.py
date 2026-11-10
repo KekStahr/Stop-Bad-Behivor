@@ -7,14 +7,13 @@ app = FastAPI(title="Reşo Cloud Sync API")
 
 DATA_FILE = "cloud_stats.json"
 
-class UserStats(BaseModel.Data):
+class UserStats(BaseModel):
     username: str
     streak: int
     longest_streak: int
     total_focus_minutes: int
     habits_prevented: int
 
-# Einfache lokale Speicherdatei auf dem Server (für Produktionsreife kann man PostgreSQL nutzen)
 def load_db():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r") as f:
@@ -26,10 +25,9 @@ def save_db(data):
         json.dump(data, f)
 
 @app.post("/sync")
-def sync_stats(stats: dict):
-    username = stats.get("username", "default_user")
+def sync_stats(stats: UserStats):
     db = load_db()
-    db[username] = stats
+    db[stats.username] = stats.dict()
     save_db(db)
     return {"status": "success", "message": "Daten erfolgreich synchronisiert!"}
 
