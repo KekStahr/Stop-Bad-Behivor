@@ -1,9 +1,0 @@
-customtkinter
-pynput
-psutil
-pystray
-Pillow
-requests
-websocket-client
-matplotlib
-keyring

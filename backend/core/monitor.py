@@ -1,0 +1,213 @@
+import threading
+import sys
+import os
+import time
+from collections import deque
+import psutil
+from pynput import keyboard
+import tkinter as tk
+from tkinter import messagebox
+import requests
+import requests
+from backend.integrations.hosts_blocker import HostsBlocker
+
+class BadBehaviorMonitor:
+    def __init__(self, stats_manager, target_processes):
+        self.stats_manager = stats_manager
+        self.trigger_words = [w.lower() for w in self.stats_manager.get_trigger_words()]
+        self.target_processes = target_processes
+        self.hosts_blocker = HostsBlocker()
+        self.hosts_blocker.update_domains(self.trigger_words)
+        self.current_typed = ""
+        self.listener = None
+        self.active_incident = False
+        self.shutdown_timer = None
+        self.whitelist_mode_active = False
+        self.whitelisted_apps = [
+            "code.exe",
+            "winword.exe",
+            "excel.exe",
+            "powerpnt.exe",
+            "python.exe",
+            "pycharm64.exe",
+            "notepad.exe",
+            "resoapp.exe",
+        ]
+        self.whitelist_thread = None
+        self.whitelist_stop_event = threading.Event()
+        self.on_trigger_callback = None
+        self.on_stress_callback = None
+        self.stress_detection_enabled = bool(
+            self.stats_manager.get_stats().get("stress_detection_enabled", False)
+        )
+        self.keystroke_timestamps = deque(maxlen=15)
+        self.stress_warning_active = False
+        self.stress_cooldown_seconds = 60
+        self.last_stress_warning = None
+
+    def set_stress_detection(self, enabled: bool):
+        self.stress_detection_enabled = bool(enabled)
+        self.keystroke_timestamps.clear()
+        self.stress_warning_active = False
+
+    def update_trigger_words(self, new_words):
+        self.trigger_words = [w.lower() for w in new_words]
+        return self.hosts_blocker.update_domains(self.trigger_words)
+
+    def start_monitoring(self):
+        self.listener = keyboard.Listener(on_press=self._on_press)
+        self.listener.start()
+
+    def stop_monitoring(self):
+        if self.listener:
+            self.listener.stop()
+
+    def set_whitelist_mode(self, active: bool, custom_whitelist=None):
+        if custom_whitelist is not None:
+            self.whitelisted_apps = [
+                app.replace("\\", "/").rsplit("/", 1)[-1].lower().strip()
+                for app in custom_whitelist
+                if app.strip()
+            ]
+        self.whitelist_mode_active = active
+        if not active:
+            self.stop_whitelist_enforcement()
+
+    def start_whitelist_enforcement(self):
+        if not self.whitelist_mode_active:
+            return
+        if self.whitelist_thread and self.whitelist_thread.is_alive():
+            return
+
+        self.whitelist_stop_event.clear()
+
+        def enforcement_loop():
+            target_processes = {target.lower() for target in self.target_processes}
+            while not self.whitelist_stop_event.is_set():
+                for proc in psutil.process_iter(["name"]):
+                    if self.whitelist_stop_event.is_set():
+                        break
+                    try:
+                        process_name = (proc.info.get("name") or "").lower()
+                        if (
+                            process_name in target_processes
+                            and process_name not in self.whitelisted_apps
+                        ):
+                            proc.terminate()
+                    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                        continue
+                self.whitelist_stop_event.wait(3)
+
+        self.whitelist_thread = threading.Thread(target=enforcement_loop, daemon=True)
+        self.whitelist_thread.start()
+
+    def stop_whitelist_enforcement(self):
+        self.whitelist_mode_active = False
+        self.whitelist_stop_event.set()
+
+    def _on_press(self, key):
+        try:
+            if self.stress_detection_enabled:
+                self._record_keystroke_timing()
+            if hasattr(key, 'char') and key.char:
+                self.current_typed += key.char.lower()
+                if len(self.current_typed) > 50:
+                    self.current_typed = self.current_typed[-50:]
+                for word in self.trigger_words:
+                    if word in self.current_typed:
+                        self.current_typed = ""
+                        self._trigger_intervention(word)
+                        break
+        except Exception:
+            pass
+
+    def _record_keystroke_timing(self):
+        now = time.monotonic()
+        self.keystroke_timestamps.append(now)
+        if len(self.keystroke_timestamps) < self.keystroke_timestamps.maxlen:
+            return
+
+        intervals = [
+            current - previous
+            for previous, current in zip(
+                self.keystroke_timestamps,
+                list(self.keystroke_timestamps)[1:],
+            )
+        ]
+        if not intervals or sum(intervals) / len(intervals) >= 0.06:
+            return
+        if (
+            self.stress_warning_active
+            or (
+                self.last_stress_warning is not None
+                and now - self.last_stress_warning < self.stress_cooldown_seconds
+            )
+        ):
+            return
+
+        self.stress_warning_active = True
+        self.last_stress_warning = now
+        self.keystroke_timestamps.clear()
+        if self.on_stress_callback:
+            self.on_stress_callback()
+
+        threading.Thread(
+            target=self._reset_stress_cooldown,
+            daemon=True,
+        ).start()
+
+    def _reset_stress_cooldown(self):
+        time.sleep(self.stress_cooldown_seconds)
+        self.stress_warning_active = False
+
+    def _trigger_intervention(self, word):
+        self.stats_manager.add_prevented_habit(word)
+        self.active_incident = True
+        
+        # Webhook an Discord/Partner senden falls hinterlegt
+        webhook = self.stats_manager.get_stats().get("webhook_url", "")
+        if webhook:
+            try:
+                requests.post(webhook, json={"content": f"🚨 **Reşo Alarm**: Nutzer hat Trigger '{word}' versucht!"}, timeout=2)
+            except:
+                pass
+
+        self._kill_target_processes()
+        
+        if self.shutdown_timer:
+            self.shutdown_timer.cancel()
+        self.shutdown_timer = threading.Timer(900, self._execute_shutdown)
+        self.shutdown_timer.start()
+
+        if self.on_trigger_callback:
+            self.on_trigger_callback(word)
+        else:
+            ai_message = f"⚠️ **REŞO INTERVENTION** ⚠️\n\nDu hast nach '{word}' gesucht! Konzentriere dich auf dein Ziel."
+            try:
+                root = tk.Tk()
+                root.withdraw()
+                root.attributes("-topmost", True)
+                messagebox.showwarning("Reşo - Achtung", ai_message)
+                root.destroy()
+            except:
+                pass
+
+    def _kill_target_processes(self):
+        for proc in psutil.process_iter(['name']):
+            try:
+                p_name = proc.info['name'].lower()
+                for target in self.target_processes:
+                    if target.lower() in p_name:
+                        proc.kill()
+            except:
+                pass
+
+    def notify_app_closing(self):
+        if self.active_incident:
+            self._execute_shutdown()
+
+    def _execute_shutdown(self):
+        if sys.platform == "win32":
+            os.system("shutdown /s /t 1")
+        else:
+            os.system("shutdown now")

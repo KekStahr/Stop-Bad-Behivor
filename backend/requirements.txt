@@ -1,0 +1,10 @@
+customtkinter
+pynput
+psutil
+pystray
+Pillow
+requests
+websocket-client
+matplotlib
+keyring
+cryptography>=41.0

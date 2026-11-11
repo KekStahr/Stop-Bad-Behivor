@@ -31,7 +31,12 @@ from sqlalchemy import (
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./local_fallback.db")
+DEFAULT_DATABASE_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "local_fallback.db",
+)
+DEFAULT_DATABASE_URL = f"sqlite:///{DEFAULT_DATABASE_PATH.replace(os.sep, '/')}"
+DATABASE_URL = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
@@ -599,8 +604,11 @@ class SupportChatManager:
     """In-memory anonymous matchmaking for a single server process."""
 
     MAX_WAITING_PER_ROLE = 100
-    MAX_MESSAGE_LENGTH = 1000
     MAX_IMAGE_SIZE = 500 * 1024
+    MAX_ENCRYPTED_PACKET_SIZE = (
+        ((MAX_IMAGE_SIZE + 2) // 3) * 4 * 4 // 3 + 4096
+    )
+    MAX_ENCRYPTED_CONTENT_SIZE = ((MAX_IMAGE_SIZE + 2) // 3) * 4 + 4096
     MESSAGE_WINDOW_SECONDS = 10
     MAX_MESSAGES_PER_WINDOW = 8
 
@@ -665,67 +673,41 @@ class SupportChatManager:
             await self.disconnect(partner)
 
     def make_outgoing_packet(self, role: str, packet: dict):
+        if role not in {"seeker", "helper"}:
+            return None
         packet_type = packet.get("type")
-        if packet_type == "user_info":
-            username = packet.get("username")
-            rank = packet.get("rank")
-            streak = packet.get("streak")
-            if (
-                not isinstance(username, str)
-                or not isinstance(rank, str)
-                or len(username) > 40
-                or len(rank) > 80
-                or not username.isprintable()
-                or not rank.isprintable()
-                or not isinstance(streak, int)
-                or isinstance(streak, bool)
-                or not 0 <= streak <= 100000
-            ):
+        if packet_type == "key_exchange":
+            public_key = packet.get("public_key")
+            if not isinstance(public_key, str) or len(public_key) != 44:
                 return None
-            username = " ".join(username.split())
-            rank = " ".join(rank.split())
-            if not username or not rank:
+            try:
+                decoded_key = base64.b64decode(public_key, validate=True)
+            except (binascii.Error, ValueError):
+                return None
+            if len(decoded_key) != 32:
                 return None
             return {
-                "type": "user_info",
-                "username": username,
-                "rank": rank,
-                "streak": streak,
-            }
-        if packet_type in {"message", "sticker"}:
-            text = packet.get("text")
-            if not isinstance(text, str) or not text.strip() or not text.isprintable():
-                return None
-            if len(text) > self.MAX_MESSAGE_LENGTH:
-                return None
-            return {
-                "type": packet_type,
-                "text": text.strip(),
+                "type": "key_exchange",
+                "public_key": public_key,
                 "role": role,
             }
-        if packet_type == "image":
-            image_data = packet.get("image_data")
-            content_type = packet.get("content_type")
+        if packet_type == "secure_message":
+            envelope = packet.get("envelope")
             if (
-                not isinstance(image_data, str)
-                or content_type not in {"image/png", "image/jpeg"}
-                or len(image_data) > ((self.MAX_IMAGE_SIZE + 2) // 3) * 4
+                not isinstance(envelope, str)
+                or not envelope
+                or len(envelope) > self.MAX_ENCRYPTED_PACKET_SIZE
             ):
                 return None
             try:
-                decoded = base64.b64decode(image_data, validate=True)
+                decoded_envelope = base64.b64decode(envelope, validate=True)
             except (binascii.Error, ValueError):
                 return None
-            if len(decoded) > self.MAX_IMAGE_SIZE:
-                return None
-            if content_type == "image/png" and not decoded.startswith(b"\x89PNG\r\n\x1a\n"):
-                return None
-            if content_type == "image/jpeg" and not decoded.startswith(b"\xff\xd8\xff"):
+            if len(decoded_envelope) > self.MAX_ENCRYPTED_CONTENT_SIZE:
                 return None
             return {
-                "type": "image",
-                "content_type": content_type,
-                "image_data": image_data,
+                "type": "secure_message",
+                "envelope": envelope,
                 "role": role,
             }
         return None
@@ -780,7 +762,10 @@ async def support_chat_websocket(websocket: WebSocket, role: str):
     try:
         while True:
             raw_packet = await websocket.receive_text()
-            if len(raw_packet) > ((chat_manager.MAX_IMAGE_SIZE + 2) // 3) * 4 + 2048:
+            if (
+                len(raw_packet.encode("utf-8"))
+                > chat_manager.MAX_ENCRYPTED_PACKET_SIZE + 256
+            ):
                 await websocket.send_json(
                     {"type": "error", "message": "Nachricht ist zu lang."}
                 )
@@ -798,7 +783,7 @@ async def support_chat_websocket(websocket: WebSocket, role: str):
                 )
                 continue
             packet_type = packet.get("type")
-            if packet_type not in {"user_info", "message", "sticker", "image"}:
+            if packet_type not in {"key_exchange", "secure_message"}:
                 await websocket.send_json(
                     {"type": "error", "message": "Unbekannter Nachrichtentyp."}
                 )

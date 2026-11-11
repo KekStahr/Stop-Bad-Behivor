@@ -1,6 +1,44 @@
 # Stop-Bad-Behivor
 This is a program that is very effective at stopping you from engaging in bad habits.
 
+## Electron-Web-App
+
+Die Anwendung wird als Electron-Web-App gestartet. Die Oberfläche liegt
+thematisch sortiert in `gui/`; das lokale Python-Backend in `backend/` läuft
+ausschließlich im Hintergrund, damit Timer, Systemüberwachung, Tray und
+Hotkeys weiter funktionieren. Zum Starten wird nicht `python main.py`, sondern
+`npm start` verwendet. Die Backend-Module und die Electron-Oberfläche sind
+nach Bereichen getrennt (`backend/core/`, `backend/ui/`,
+`backend/integrations/`, `backend/community/` und `gui/pages/`).
+
+Für die Entwicklung Node.js sowie einmalig die Python-Abhängigkeiten des
+Hintergrund-Backends installieren:
+
+```powershell
+pip install -r backend/requirements.txt
+npm install
+npm start
+```
+
+`npm start` öffnet nur die Electron-Web-App und startet den lokalen
+Python-Dienst automatisch im Hintergrund. Falls Python nicht im PATH liegt,
+kann der Interpreter über `RESO_PYTHON` angegeben werden. Für den
+Windows-Installer PyInstaller installieren und anschließend `npm run build`
+ausführen:
+
+```powershell
+pip install pyinstaller
+npm run build
+```
+
+Nach dem Build wird der Installer unter `dist/` erzeugt; er enthält das
+Backend, sodass Python für die Installation und den normalen App-Start nicht
+separat gestartet werden muss. Fortschrittsdaten werden im
+Electron-Benutzerverzeichnis gespeichert; beim ersten Entwicklungsstart werden
+bisherige Daten aus `backend/data/stats_data.json` dorthin kopiert. Das lokale
+API-Backend bindet ausschließlich an `127.0.0.1` und verlangt ein zufälliges
+Token pro Start.
+
 ## Tray and shutdown countdown
 
 Closing the main window minimizes the app to the system tray. Choosing
@@ -11,6 +49,16 @@ the countdown expires. The countdown is shown on the Home tab and can be
 cancelled there; the app remains usable while it runs. Windows or a user with
 access to the local app data can still terminate or modify the app or change
 the system clock; this is not an operating-system-enforced lock.
+
+## Home screen
+
+The Home tab shows the saved community display name when available, the current
+rank, a flame streak badge, and a live sobriety timer with days, hours, minutes,
+and seconds. Its progress bars animate as the timer advances. Quick actions,
+savings rings, a savings goal, the monthly challenge, and a daily quote are
+available on the same screen. The savings rings compare money with the savings
+goal and recovered focus time with 24 hours. Tab navigation remains at the
+bottom of the app.
 
 ## Google Cloud Backup
 
@@ -23,12 +71,12 @@ confidential; never reuse a web-server client secret here. On Windows, for
 example, set the client ID for the current PowerShell session with
 `$env:GOOGLE_OAUTH_CLIENT_ID = "your-desktop-client-id"`.
 
-Install the desktop requirements with `pip install -r requirements.txt`.
+Install the desktop requirements with `pip install -r backend/requirements.txt`.
 Deploy the FastAPI app with `server` as the service root, install
 `server/requirements.txt`, and start it with
 `uvicorn main:app --host 0.0.0.0 --port $PORT`. Configure `DATABASE_URL` for
 the deployment. The desktop currently targets the Reşo API URL defined in
-`stats.py`; set `RESO_CLOUD_URL` to the deployed server's `/sync` endpoint if it
+`backend/core/stats.py`; set `RESO_CLOUD_URL` to the deployed server's `/sync` endpoint if it
 differs. Deploy the updated server before using cloud backup.
 
 After Google sign-in, choose either **Jetzt sichern** or
@@ -39,6 +87,12 @@ in the operating system keyring. Once a backup has been initialized, later
 local changes are uploaded automatically; offline failures are logged and can
 be retried with **Jetzt sichern**. Reframing/emotion history and trigger
 timestamps remain local because they can contain sensitive personal data.
+Google sign-in uses the `openid`, `email`, and `profile` scopes to associate an
+account with the Reşo backup service; it does not request Google Drive access.
+If the desktop OAuth client ID is missing, **Mit Google verbinden** opens the
+Google Cloud Console so the client can be created. Set
+`GOOGLE_OAUTH_CLIENT_ID` and restart Reşo; connecting then opens Google's
+sign-in and consent page.
 
 ## Anonymous support chat
 
@@ -48,13 +102,20 @@ with Uvicorn's WebSocket support enabled; the desktop derives the `ws`/`wss`
 URL from `RESO_CLOUD_URL`. The chat is in-memory and single-process: messages,
 rooms, and the waiting queue are not persisted, and running multiple server
 workers does not share matches. Chat starts only after the user confirms in the
-window. Participants are anonymous but not verified; do not share identifying
-or contact information. No account identity is sent to chat partners, but the
-desktop shares your streak and rank as profile information when matched. These
-values are not independently verified. Text, stickers, and PNG/JPEG images up
-to 500 KB can be relayed; they are not persisted by the chat service. The server
-operator may see connection metadata. The chat is not a crisis or professional
-support service. Message size, queue size, and per-connection send rate are
+window. The desktop establishes an ephemeral X25519 key agreement and encrypts
+profile data, text, stickers, and PNG/JPEG images with AES-GCM before sending
+them. The server only validates and relays public keys and opaque ciphertext;
+it rejects plaintext chat payloads. Encryption keys are ephemeral and are not
+stored. Participants are anonymous but not verified; no account identity is
+sent, while streak and rank are shared as profile information after encryption.
+These values are not independently verified.
+
+The server can see connection metadata and public keys. Compare the displayed
+security fingerprint with the partner over a separate trusted channel: without
+that check, an actively malicious relay could replace public keys during the
+initial exchange. The chat is not a crisis or professional support service; do
+not share identifying or contact information. Messages are not persisted by the
+chat service. Message size, queue size, and per-connection send rate are
 limited.
 
 ## Community forum

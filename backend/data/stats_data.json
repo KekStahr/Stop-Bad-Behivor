@@ -1,0 +1,88 @@
+{
+    "timer_activations": 0,
+    "total_focus_minutes": 0,
+    "habits_prevented": 2,
+    "streak": 0,
+    "last_active_date": "2026-11-11",
+    "trigger_words": [
+        "porno",
+        "casino",
+        "aufschieben",
+        "gambling",
+        "cheat",
+        "stri"
+    ],
+    "longest_streak": 1,
+    "trigger_stats": {
+        "stri": 1
+    },
+    "daily_activity": {},
+    "incident_hours": {
+        "16:00 Uhr": 1
+    },
+    "hourly_rate": 0.1,
+    "pin_code": "",
+    "webhook_url": "",
+    "panic_hotkey": "<ctrl>+<alt>+x",
+    "level": "\ud83c\udf31 Willens-Anw\u00e4rter",
+    "daily_moods": {},
+    "monthly_challenge_badges": [],
+    "savings_goal": {
+        "name": "Neues Auto",
+        "target_amount": 1.0
+    },
+    "last_sunday_report": "",
+    "shadow_letter": "Du bist derzeitig Impotent! Verbessere dich f\u00fcr dein zuk\u00fcnfitige Tochter",
+    "discipline_codex": {
+        "identity": "Ein Super Dad",
+        "rules": "1. Ein Leben im jetzt Leben ohne Ketten der Sucht"
+    },
+    "stress_detection_enabled": false,
+    "codex_completed": true,
+    "community_chat_settings": {
+        "auto_connect_trigger": true,
+        "allow_helper_mode": true
+    },
+    "cloud_backup_initialized": false,
+    "cloud_backup_dirty": false,
+    "reframing_entries": [
+        {
+            "timestamp": "2026-11-10T16:47:58",
+            "emotion": "Einsamkeit",
+            "trigger": "stri",
+            "weight": 3.0
+        }
+    ],
+    "emotion_stats": {
+        "Einsamkeit": 1
+    },
+    "weekday_hour_matrix": {
+        "1": {
+            "16": 1
+        }
+    },
+    "daily_incidents": {
+        "2026-11-10": 1
+    },
+    "relapse_reflections": [],
+    "whitelist_mode_enabled": false,
+    "whitelisted_apps": [
+        "code.exe",
+        "winword.exe",
+        "excel.exe",
+        "powerpnt.exe",
+        "python.exe",
+        "pycharm64.exe",
+        "notepad.exe",
+        "resoapp.exe"
+    ],
+    "streak_start_iso": "2026-11-11T03:17:26.144232",
+    "last_trigger_at": "2026-11-10T16:46:33",
+    "last_trigger_category": "medium",
+    "shutdown_deadline_epoch": null,
+    "community_author_id": "f707e72796c2ce866304fbce2455f04f",
+    "community_author_name": "Kek",
+    "ai_pause_min": 5,
+    "ai_pause_max": 10,
+    "ai_pause_preset": "strict"
+}

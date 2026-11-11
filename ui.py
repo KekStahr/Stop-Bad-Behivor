@@ -6,6 +6,7 @@ import sys
 import time
 import math
 import queue
+import logging
 from pathlib import Path
 import base64
 import binascii
@@ -17,15 +18,39 @@ from datetime import date, datetime, timedelta
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from pynput import keyboard
+import importlib.util
 
-from timer import FocusTimer
-from monitor import BadBehaviorMonitor
-from stats import StatsManager
-from icon import create_app_icon
-from ai_motivator import MotivationManager
-from discord_rpc import DiscordRPCManager
-from autostart import is_autostart_enabled, setup_autostart
-from community_forum import CommunityForum
+
+def _load_local_module(module_name):
+    try:
+        module = __import__(module_name, fromlist=["*"])
+        return module
+    except ImportError:
+        module_path = Path(__file__).resolve().parent / f"{module_name}.py"
+        if not module_path.exists():
+            raise
+
+        spec = importlib.util.spec_from_file_location(module_name, module_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Unable to load module '{module_name}' from '{module_path}'")
+
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+        return module
+
+
+FocusTimer = _load_local_module("timer").FocusTimer
+BadBehaviorMonitor = _load_local_module("monitor").BadBehaviorMonitor
+StatsManager = _load_local_module("stats").StatsManager
+EncryptedChatSession = _load_local_module("chat_crypto").EncryptedChatSession
+create_app_icon = _load_local_module("icon").create_app_icon
+MotivationManager = _load_local_module("ai_motivator").MotivationManager
+DiscordRPCManager = _load_local_module("discord_rpc").DiscordRPCManager
+is_autostart_enabled = _load_local_module("autostart").is_autostart_enabled
+setup_autostart = _load_local_module("autostart").setup_autostart
+CommunityForum = _load_local_module("community_forum").CommunityForum
+LocalWebApi = _load_local_module("web_api").LocalWebApi
 
 # Design-Konfiguration
 ctk.set_appearance_mode("Dark")
@@ -75,6 +100,7 @@ class SupportChatWindow(ctk.CTkToplevel):
         self.ws_app = None
         self.events = queue.Queue()
         self.chat_images = []
+        self.chat_crypto = None
 
         self.lbl_status = ctk.CTkLabel(
             self,
@@ -88,7 +114,10 @@ class SupportChatWindow(ctk.CTkToplevel):
             text=(
                 "Es werden keine Namen oder Kontodaten an den Chatpartner gesendet. "
                 "Beim Verbinden werden dein Rang und deine Streak als Profil geteilt. "
-                "Nachrichten, Sticker und PNG/JPEG-Bilder (max. 500 KB) sind möglich. "
+                "Profil, Nachrichten, Sticker und PNG/JPEG-Bilder (max. 500 KB) "
+                "werden Ende-zu-Ende verschlüsselt; der Chatserver kann die Inhalte "
+                "nicht lesen. Vergleicht den Sicherheits-Fingerabdruck über einen "
+                "anderen Kanal, um einen manipulierten Schlüsselaustausch zu erkennen. "
                 "Gesprächspartner sind nicht verifiziert; der Serverbetreiber kann "
                 "Verbindungsmetadaten sehen. Teile keine persönlichen Angaben. "
                 "Kein Krisen- oder professioneller Beratungsdienst."
@@ -196,6 +225,8 @@ class SupportChatWindow(ctk.CTkToplevel):
     def connect_to_chat(self):
         if self.ws_app is not None:
             return
+        self.chat_crypto = EncryptedChatSession()
+        self._set_chat_controls_enabled(False)
         self.btn_connect.configure(state="disabled", text="Verbindung wird aufgebaut ...")
         threading.Thread(target=self._run_websocket, daemon=True).start()
 
@@ -252,15 +283,12 @@ class SupportChatWindow(ctk.CTkToplevel):
                 self.btn_connect.configure(state="normal", text="Erneut versuchen")
             elif event == "closed":
                 self.ws_app = None
+                self.chat_crypto = None
                 self.lbl_status.configure(
                     text="Verbindung beendet",
                     text_color=TEXT_SECONDARY,
                 )
-                self.entry_msg.configure(state="disabled")
-                self.btn_send.configure(state="disabled")
-                self.btn_image.configure(state="disabled")
-                for button in self.sticker_buttons:
-                    button.configure(state="disabled")
+                self._set_chat_controls_enabled(False)
                 self.btn_connect.configure(state="normal", text="Erneut versuchen")
         self.after(100, self._poll_events)
 
@@ -273,17 +301,81 @@ class SupportChatWindow(ctk.CTkToplevel):
             )
         elif packet_type == "connected":
             self.lbl_status.configure(
-                text="Verbunden · teile keine persönlichen Daten",
+                text="Partner gefunden · Verschlüsselung wird aufgebaut ...",
+                text_color=ACCENT_ORANGE,
+            )
+            self._set_chat_controls_enabled(False)
+            self.log_system("Partner gefunden. Der sichere Kanal wird eingerichtet.")
+            if self.chat_crypto is None:
+                self.chat_crypto = EncryptedChatSession()
+            self.send_packet(
+                {"type": "key_exchange", "public_key": self.chat_crypto.public_key}
+            )
+        elif packet_type == "key_exchange":
+            if (
+                self.chat_crypto is None
+                or packet.get("role") not in {"seeker", "helper"}
+                or packet.get("role") == self.role
+            ):
+                self._reject_chat_key()
+                return
+            try:
+                fingerprint = self.chat_crypto.establish(packet.get("public_key"))
+            except ValueError:
+                self._reject_chat_key()
+                return
+            self.lbl_status.configure(
+                text="Ende-zu-Ende verschlüsselt · Fingerprint vergleichen",
                 text_color=ACCENT_GREEN,
             )
-            self.entry_msg.configure(state="normal")
-            self.btn_send.configure(state="normal")
-            self.btn_image.configure(state="normal")
-            for button in self.sticker_buttons:
-                button.configure(state="normal")
-            self.log_system("Du bist anonym verbunden. Chat verlassen ist jederzeit möglich.")
+            self.log_system(
+                "Ende-zu-Ende-Verschlüsselung aktiv. Sicherheits-Fingerprint: "
+                f"{fingerprint}. Vergleicht ihn über einen anderen Kanal."
+            )
+            self._set_chat_controls_enabled(True)
             self.send_user_info()
-        elif packet_type == "user_info":
+        elif packet_type == "secure_message":
+            if (
+                self.chat_crypto is None
+                or not self.chat_crypto.is_ready
+                or packet.get("role") not in {"seeker", "helper"}
+                or packet.get("role") == self.role
+            ):
+                self._reject_chat_key()
+                return
+            try:
+                content = self.chat_crypto.decrypt(packet.get("envelope"))
+            except ValueError:
+                self.log_system(
+                    "Eine Nachricht konnte nicht authentifiziert werden; "
+                    "der sichere Chat wird beendet."
+                )
+                if self.ws_app is not None:
+                    self.ws_app.close()
+                return
+            if content.get("type") not in {
+                "user_info",
+                "message",
+                "sticker",
+                "image",
+            }:
+                self.log_system("Ein ungültiger verschlüsselter Inhalt wurde ignoriert.")
+                return
+            content["role"] = packet.get("role")
+            self._handle_chat_content(content)
+        elif packet_type in {"user_info", "message", "sticker", "image"}:
+            self.log_system(
+                "Unverschlüsselte Chat-Inhalte wurden abgewiesen. "
+                "Bitte aktualisiere die Chat-App."
+            )
+            if self.ws_app is not None:
+                self.ws_app.close()
+        else:
+            self._handle_chat_content(packet)
+
+    def _handle_chat_content(self, packet):
+        packet_type = packet.get("type")
+        if packet_type == "user_info":
             username = packet.get("username", "Community-Mitglied")
             rank = packet.get("rank", "Rang unbekannt")
             streak = packet.get("streak", 0)
@@ -324,13 +416,29 @@ class SupportChatWindow(ctk.CTkToplevel):
         elif packet_type == "disconnected":
             self.lbl_status.configure(text="Partner hat den Chat verlassen.", text_color=ACCENT_RED)
             self.log_system("Die andere Person hat den Chat verlassen.")
-            self.entry_msg.configure(state="disabled")
-            self.btn_send.configure(state="disabled")
+            self.chat_crypto = None
+            self._set_chat_controls_enabled(False)
         elif packet_type == "error":
             self.lbl_status.configure(
                 text=str(packet.get("message", "Chatfehler.")),
                 text_color=ACCENT_RED,
             )
+
+    def _set_chat_controls_enabled(self, enabled):
+        state = "normal" if enabled else "disabled"
+        for widget in (self.entry_msg, self.btn_send, self.btn_image):
+            widget.configure(state=state)
+        for button in self.sticker_buttons:
+            button.configure(state=state)
+
+    def _reject_chat_key(self):
+        self.lbl_status.configure(
+            text="Verschlüsselung fehlgeschlagen · Verbindung wird beendet",
+            text_color=ACCENT_RED,
+        )
+        self._set_chat_controls_enabled(False)
+        if self.ws_app is not None:
+            self.ws_app.close()
 
     def log_system(self, text):
         self._append_chat(f"[System]: {text}")
@@ -350,8 +458,28 @@ class SupportChatWindow(ctk.CTkToplevel):
     def send_packet(self, packet):
         if not self.ws_app:
             return False
+        if packet.get("type") == "key_exchange":
+            outgoing = packet
+        elif self.chat_crypto is not None and self.chat_crypto.is_ready:
+            try:
+                outgoing = {
+                    "type": "secure_message",
+                    "envelope": self.chat_crypto.encrypt(packet),
+                }
+            except (TypeError, ValueError, RuntimeError) as error:
+                self.lbl_status.configure(
+                    text=f"Nachricht konnte nicht verschlüsselt werden ({type(error).__name__}).",
+                    text_color=ACCENT_RED,
+                )
+                return False
+        else:
+            self.lbl_status.configure(
+                text="Sicherer Chatkanal wird noch aufgebaut.",
+                text_color=ACCENT_ORANGE,
+            )
+            return False
         try:
-            self.ws_app.send(json.dumps(packet))
+            self.ws_app.send(json.dumps(outgoing))
         except (websocket.WebSocketException, OSError, RuntimeError, ValueError) as error:
             self.lbl_status.configure(
                 text=f"Nachricht konnte nicht gesendet werden ({type(error).__name__}).",
@@ -510,6 +638,11 @@ class ResoApp(ctk.CTk):
         self.shutdown_remaining_seconds = 0
         self.shutdown_deadline = 0.0
         self.shutdown_after_id = None
+        self._home_flame_animation_id = None
+        self._home_flame_animation_phase = 0
+        self._home_clock_animation_id = None
+        self._home_clock_animation_started_at = 0.0
+        self._home_clock_progress_starts = {}
         self.ai_pauses_enabled = bool(
             self.stats_manager.get_stats().get("ai_pauses_enabled", False)
         )
@@ -547,6 +680,7 @@ class ResoApp(ctk.CTk):
         self.update_stats_display()
         self.refresh_stoic_quote()
         self._streak_ticker_id = self.after(1000, self._live_ticker)
+        self._home_flame_animation_id = self.after(250, self._animate_home_flame)
         if self.is_shutting_down:
             self.after(0, self._show_home_hub)
             self.after(0, self._run_shutdown_countdown)
@@ -562,8 +696,254 @@ class ResoApp(ctk.CTk):
 
         # Globaler Hotkey für den Panic-Button starten
         self.setup_panic_hotkey_listener()
+        self._web_api_requests = queue.Queue()
+        self.web_api = None
+        if "--web-api" in sys.argv:
+            self.web_api = LocalWebApi(self._queue_web_api_request)
+            self.after(25, self._poll_web_api_requests)
 
         self.protocol("WM_DELETE_WINDOW", self.hide_to_tray)
+
+    def _queue_web_api_request(self, method, path, body, response, result):
+        if method == "GET" and path == "/api/community":
+            threading.Thread(
+                target=self._load_web_community,
+                args=(response, result),
+                daemon=True,
+            ).start()
+            return
+        self._web_api_requests.put((method, path, body, response, result))
+
+    def _load_web_community(self, response, result):
+        try:
+            result["status"] = 200
+            result["body"] = {
+                "stats": self.stats_manager.get_community_stats(),
+                "leaderboard": self.stats_manager.get_community_leaderboard(),
+            }
+        except Exception:
+            logging.exception("Community-Daten konnten nicht geladen werden.")
+            result["status"] = 500
+            result["body"] = {"error": "Community-Daten konnten nicht geladen werden."}
+        finally:
+            response.set()
+
+    def _poll_web_api_requests(self):
+        while True:
+            try:
+                method, path, body, response, result = self._web_api_requests.get_nowait()
+            except queue.Empty:
+                break
+            try:
+                result["status"], result["body"] = self._handle_web_api_request(
+                    method,
+                    path,
+                    body,
+                )
+            except (TypeError, ValueError, KeyError) as error:
+                result["status"] = 400
+                result["body"] = {"error": str(error)}
+            except Exception:
+                logging.exception("Lokale Web-Anfrage konnte nicht verarbeitet werden.")
+                result["status"] = 500
+                result["body"] = {"error": "Die Anfrage konnte nicht verarbeitet werden."}
+            finally:
+                response.set()
+        if self.web_api is not None:
+            self.after(25, self._poll_web_api_requests)
+
+    def _handle_web_api_request(self, method, path, body):
+        if method == "GET" and path == "/api/dashboard":
+            data = self.stats_manager.get_stats()
+            saved_hours, saved_money = self.stats_manager.calculate_savings()
+            goal = self.stats_manager.get_savings_progress()
+            rank = self.stats_manager.get_user_rank_and_badges()
+            opportunity = self.stats_manager.get_opportunity_equivalents()
+            streak_time = self.stats_manager.get_detailed_streak_components()
+            user_name = data.get("community_author_name", "")
+            return 200, {
+                "name": user_name if isinstance(user_name, str) else "",
+                "rank": rank["rank"],
+                "streak": rank["streak"],
+                "longestStreak": rank["longest"],
+                "streakTime": streak_time,
+                "totalFocusMinutes": data.get("total_focus_minutes", 0),
+                "habitsPrevented": data.get("habits_prevented", 0),
+                "savedHours": saved_hours,
+                "savedMoney": saved_money + rank["streak"] * data.get("daily_expense", 0),
+                "savingsGoal": goal,
+                "opportunity": opportunity,
+                "quote": self.stats_manager.get_stoic_quote(),
+                "timer": self._web_timer_state(),
+                "badges": rank["badges"],
+            }
+
+        if method == "GET" and path == "/api/analytics":
+            data = self.stats_manager.get_stats()
+            return 200, {
+                "dailyActivity": data.get("daily_activity", {}),
+                "dailyIncidents": data.get("daily_incidents", {}),
+                "triggerStats": data.get("trigger_stats", {}),
+                "totalFocusMinutes": data.get("total_focus_minutes", 0),
+                "habitsPrevented": data.get("habits_prevented", 0),
+                "opportunity": self.stats_manager.get_opportunity_equivalents(),
+                "savings": self.stats_manager.calculate_savings(),
+            }
+
+        if method == "GET" and path == "/api/settings":
+            data = self.stats_manager.get_stats()
+            goal = data.get("savings_goal", {})
+            return 200, {
+                "hourlyRate": self.stats_manager.get_hourly_rate(),
+                "dailyExpense": data.get("daily_expense", 0.0),
+                "defaultTimer": data.get("default_timer_mins", 25),
+                "goalName": goal.get("name", "Traum-Erfüllung"),
+                "goalAmount": goal.get("target_amount", 100.0),
+                "triggerWords": self.stats_manager.get_trigger_words(),
+                "stressDetection": bool(data.get("stress_detection_enabled", False)),
+                "whitelistEnabled": self.whitelist_enabled,
+            }
+
+        if method == "GET" and path == "/api/community":
+            return 200, {
+                "stats": self.stats_manager.get_community_stats(),
+                "leaderboard": self.stats_manager.get_community_leaderboard(),
+            }
+
+        if method == "POST" and path == "/api/app/show":
+            self.show_from_tray()
+            return 200, {"shown": True}
+
+        if method == "POST" and path == "/api/app/quit":
+            self.after(100, self.execute_final_quit)
+            return 200, {"stopping": True}
+
+        if method == "POST" and path == "/api/timer/start":
+            minutes = body.get("minutes")
+            if isinstance(minutes, bool) or not isinstance(minutes, int) or not 1 <= minutes <= 180:
+                raise ValueError("Der Fokus-Timer muss zwischen 1 und 180 Minuten liegen.")
+            if self.focus_timer.is_running:
+                return 409, {"error": "Es läuft bereits ein Fokus-Timer."}
+            self.time_slider.set(minutes)
+            self.slider_val_label.configure(text=f"Dauer: {minutes} Minuten")
+            self.start_timer_action(minutes)
+            return 200, {"timer": self._web_timer_state()}
+
+        if method == "POST" and path == "/api/timer/stop":
+            self.focus_timer.stop()
+            self.reset_timer_ui()
+            return 200, {"timer": self._web_timer_state()}
+
+        if method == "POST" and path == "/api/settings":
+            self._save_web_settings(body)
+            return 200, {"settings": self._web_settings_state()}
+
+        return 404, {"error": "Unbekannter API-Endpunkt."}
+
+    def _web_timer_state(self):
+        return {
+            "running": self.focus_timer.is_running,
+            "remainingSeconds": max(0, int(self.focus_timer.remaining_seconds)),
+            "durationMinutes": int(self.focus_timer.total_duration_minutes),
+        }
+
+    def _web_settings_state(self):
+        data = self.stats_manager.get_stats()
+        goal = data.get("savings_goal", {})
+        return {
+            "hourlyRate": self.stats_manager.get_hourly_rate(),
+            "dailyExpense": data.get("daily_expense", 0.0),
+            "defaultTimer": data.get("default_timer_mins", 25),
+            "goalName": goal.get("name", "Traum-Erfüllung"),
+            "goalAmount": goal.get("target_amount", 100.0),
+            "triggerWords": self.stats_manager.get_trigger_words(),
+            "stressDetection": bool(data.get("stress_detection_enabled", False)),
+            "whitelistEnabled": self.whitelist_enabled,
+        }
+
+    def _save_web_settings(self, body):
+        rate = (
+            self._web_number(body["hourlyRate"], "Stundensatz", 0, 10000)
+            if "hourlyRate" in body
+            else None
+        )
+        expense = (
+            self._web_number(body["dailyExpense"], "Tagesausgaben", 0, 1000000)
+            if "dailyExpense" in body
+            else None
+        )
+        minutes = body.get("defaultTimer")
+        if minutes is not None and (
+            isinstance(minutes, bool) or not isinstance(minutes, int) or not 1 <= minutes <= 180
+        ):
+            raise ValueError("Der Standard-Timer muss zwischen 1 und 180 Minuten liegen.")
+        savings_goal = None
+        if "savingsGoal" in body:
+            goal = body["savingsGoal"]
+            if not isinstance(goal, dict):
+                raise ValueError("Das Sparziel hat ein ungültiges Format.")
+            name = goal.get("name")
+            if not isinstance(name, str):
+                raise ValueError("Der Name des Sparziels muss Text sein.")
+            amount = self._web_number(
+                goal.get("amount"),
+                "Sparziel",
+                0.01,
+                100000000,
+            )
+            savings_goal = (name, amount)
+        cleaned_words = None
+        if "triggerWords" in body:
+            words = body["triggerWords"]
+            if not isinstance(words, list) or not 1 <= len(words) <= 50:
+                raise ValueError("Bitte gib 1 bis 50 Trigger-Wörter an.")
+            cleaned_words = []
+            for word in words:
+                if not isinstance(word, str):
+                    raise ValueError("Trigger-Wörter müssen Text sein.")
+                word = word.strip().lower()
+                if not 2 <= len(word) <= 40 or not word.isprintable():
+                    raise ValueError("Trigger-Wörter müssen 2 bis 40 druckbare Zeichen enthalten.")
+                if word not in cleaned_words:
+                    cleaned_words.append(word)
+        stress_detection = body.get("stressDetection")
+        if "stressDetection" in body and not isinstance(stress_detection, bool):
+            raise ValueError("Die Stress-Erkennung muss ein Wahr/Falsch-Wert sein.")
+
+        if rate is not None:
+            self.stats_manager.set_hourly_rate(rate)
+        if expense is not None:
+            self.stats_manager.data["daily_expense"] = expense
+            self.stats_manager.save_data()
+        if minutes is not None:
+            self.stats_manager.data["default_timer_mins"] = minutes
+            self.stats_manager.save_data()
+            self.time_slider.set(minutes)
+            self.slider_val_label.configure(text=f"Dauer: {minutes} Minuten")
+            if not self.focus_timer.is_running:
+                self.timer_label.configure(text=f"{minutes:02d}:00")
+        if savings_goal is not None:
+            self.stats_manager.set_savings_goal(*savings_goal)
+        if cleaned_words is not None:
+            self.stats_manager.save_trigger_words(cleaned_words)
+            self.monitor.update_trigger_words(cleaned_words)
+        if stress_detection is not None:
+            self.stats_manager.data["stress_detection_enabled"] = stress_detection
+            self.stats_manager.save_data()
+            self.monitor.set_stress_detection(stress_detection)
+        self.update_stats_display()
+
+    @staticmethod
+    def _web_number(value, label, minimum, maximum):
+        if isinstance(value, bool):
+            raise ValueError(f"{label} muss eine gültige Zahl sein.")
+        try:
+            number = float(value)
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"{label} muss eine gültige Zahl sein.") from error
+        if not math.isfinite(number) or not minimum <= number <= maximum:
+            raise ValueError(f"{label} muss zwischen {minimum} und {maximum} liegen.")
+        return number
 
     def setup_tray(self):
         menu = pystray.Menu(
@@ -645,16 +1025,33 @@ class ResoApp(ctk.CTk):
         self.is_shutting_down = False
         self.shutdown_deadline = 0.0
         self.shutdown_after_id = None
+        if self.web_api is not None:
+            self.web_api.close()
+            self.web_api = None
         self.stats_manager.set_shutdown_deadline(None)
         if self.tray_icon:
             self.tray_icon.stop()
         if self._streak_ticker_id is not None:
             self.after_cancel(self._streak_ticker_id)
             self._streak_ticker_id = None
+        for callback_id in (
+            self._home_flame_animation_id,
+            self._home_clock_animation_id,
+        ):
+            if callback_id is not None:
+                self.after_cancel(callback_id)
+        self._home_flame_animation_id = None
+        self._home_clock_animation_id = None
         self.motivation_manager.stop_scheduler()
         self.discord_rpc.close()
         self.monitor.stop_whitelist_enforcement()
+        self.monitor.stop_monitoring()
+        if self.hotkey_listener is not None:
+            self.hotkey_listener.stop()
+            self.hotkey_listener = None
+        self.focus_timer.stop()
         self.monitor.notify_app_closing()
+        self.quit()
         self.destroy()
 
     def show_from_tray(self, icon=None, item=None):
@@ -708,33 +1105,6 @@ class ResoApp(ctk.CTk):
             self._apply_apple_widget_style(widget)
 
     def create_widgets(self):
-        # Header Area
-        self.header_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.header_frame.pack(fill="x", padx=32, pady=(24, 14))
-
-        self.title_label = ctk.CTkLabel(
-            self.header_frame, 
-            text="REŞO : YOU VS YOU", 
-            font=ctk.CTkFont(size=30, weight="bold"),
-            text_color=TEXT_PRIMARY
-        )
-        self.title_label.pack(anchor="w")
-        ctk.CTkLabel(
-            self.header_frame,
-            text="DEIN PERSÖNLICHER FOKUSRAUM",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            text_color=TEXT_SECONDARY,
-        ).pack(anchor="w", pady=(1, 4))
-
-        self.lbl_level = ctk.CTkLabel(
-            self.header_frame, 
-            text=f"Rang: {self.stats_manager.get_stats().get('level', 'Disziplin-Novize')}", 
-            font=ctk.CTkFont(size=14, weight="bold"),
-            text_color=ACCENT_BLUE
-        )
-        self.lbl_level.pack(anchor="w", pady=(2, 0))
-
-        # Modern Custom Tabs
         self.tabview = ctk.CTkTabview(
             self, 
             width=810, 
@@ -748,8 +1118,9 @@ class ResoApp(ctk.CTk):
             segmented_button_unselected_hover_color=CARD_BORDER,
             segmented_button_font=ctk.CTkFont(size=14, weight="bold"),
             command=self.on_tab_changed,
+            anchor="s",
         )
-        self.tabview.pack(fill="both", expand=True, pady=(0, 20), padx=26)
+        self.tabview.pack(fill="both", expand=True, pady=(12, 12), padx=26)
 
         self.tab_home = self.tabview.add("🏠 Home")
         self.tab_timer = self.tabview.add("⏱️ Fokus & Pausen")
@@ -763,27 +1134,54 @@ class ResoApp(ctk.CTk):
         )
         self.home_scroll.pack(fill="both", expand=True, padx=10, pady=10)
 
-        banner_card = ctk.CTkFrame(
-            self.home_scroll,
-            fg_color=CARD_BG,
-            corner_radius=12,
-            border_color=CARD_BORDER,
-            border_width=1,
+        welcome_frame = ctk.CTkFrame(self.home_scroll, fg_color="transparent")
+        welcome_frame.pack(fill="x", padx=10, pady=(4, 12))
+        welcome_frame.grid_columnconfigure(0, weight=1)
+        welcome_frame.grid_columnconfigure(1, weight=0)
+
+        welcome_copy = ctk.CTkFrame(welcome_frame, fg_color="transparent")
+        welcome_copy.grid(row=0, column=0, sticky="w")
+        self.lbl_home_welcome = ctk.CTkLabel(
+            welcome_copy,
+            text="",
+            font=ctk.CTkFont(size=27, weight="bold"),
+            text_color=TEXT_PRIMARY,
+            wraplength=460,
+            justify="left",
         )
-        banner_card.pack(fill="x", padx=10, pady=8)
-        ctk.CTkLabel(
-            banner_card,
-            text="🔥 Willkommen zurück in der Zitadelle",
-            font=ctk.CTkFont(size=16, weight="bold"),
-            text_color=ACCENT_ORANGE,
-        ).pack(anchor="w", padx=20, pady=(15, 5))
-        self.lbl_home_streak = ctk.CTkLabel(
-            banner_card,
-            text="Aktuelle Streak & Rang werden geladen ...",
-            font=ctk.CTkFont(size=13),
+        self.lbl_home_welcome.pack(anchor="w")
+        self.lbl_home_rank = ctk.CTkLabel(
+            welcome_copy,
+            text="Rang wird geladen ...",
+            font=ctk.CTkFont(size=15),
             text_color=TEXT_SECONDARY,
         )
-        self.lbl_home_streak.pack(anchor="w", padx=20, pady=(0, 15))
+        self.lbl_home_rank.pack(anchor="w", pady=(3, 0))
+
+        streak_card = ctk.CTkFrame(
+            welcome_frame,
+            fg_color="#2C2520",
+            corner_radius=14,
+            border_color=ACCENT_ORANGE,
+            border_width=1,
+        )
+        streak_card.grid(row=0, column=1, sticky="e", padx=(12, 0))
+        self.home_flame_label = ctk.CTkLabel(
+            streak_card,
+            text="🔥",
+            font=ctk.CTkFont(size=25),
+            text_color=ACCENT_ORANGE,
+        )
+        self.home_flame_label.pack(side="left", padx=(14, 7), pady=10)
+        self.lbl_home_streak = ctk.CTkLabel(
+            streak_card,
+            text="0 Sekunden",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=ACCENT_ORANGE,
+            wraplength=230,
+            justify="left",
+        )
+        self.lbl_home_streak.pack(side="left", padx=(0, 14), pady=10)
 
         self.shutdown_status_frame = ctk.CTkFrame(
             self.home_scroll,
@@ -819,41 +1217,321 @@ class ResoApp(ctk.CTk):
             command=self.cancel_shutdown_countdown,
         ).pack(side="right", padx=(12, 0))
 
+        self.home_overview_frame = ctk.CTkFrame(
+            self.home_scroll,
+            fg_color="transparent",
+        )
+        self.home_overview_frame.pack(fill="x", padx=10, pady=8)
+        self.home_overview_frame.grid_columnconfigure(0, weight=1)
+        self.home_time_card = ctk.CTkFrame(
+            self.home_overview_frame,
+            fg_color=CARD_BG,
+            corner_radius=16,
+            border_color=CARD_BORDER,
+            border_width=1,
+        )
+        self.home_time_card.grid(row=0, column=0, sticky="ew")
+        clock_header = ctk.CTkFrame(self.home_time_card, fg_color="transparent")
+        clock_header.pack(fill="x", padx=20, pady=(14, 8))
+        ctk.CTkLabel(
+            clock_header,
+            text="⏱  Nüchtern seit",
+            font=ctk.CTkFont(size=17, weight="bold"),
+            text_color=TEXT_PRIMARY,
+        ).pack(side="left")
+        ctk.CTkLabel(
+            clock_header,
+            text="● Echtzeit-Stoppuhr",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=ACCENT_GREEN,
+        ).pack(side="right")
+        duration_rows = ctk.CTkFrame(self.home_time_card, fg_color="transparent")
+        duration_rows.pack(fill="x", padx=14, pady=(0, 14))
+        for column in range(4):
+            duration_rows.grid_columnconfigure(column, weight=1, uniform="home_clock")
+        self.home_duration_labels = {}
+        self.home_duration_progress = {}
+        self.home_duration_progress_values = {}
+        self.home_duration_progress_targets = {}
+        for column, (key, title) in enumerate((
+            ("days", "TAGE"),
+            ("hours", "STUNDEN"),
+            ("minutes", "MINUTEN"),
+            ("seconds", "SEKUNDEN"),
+        )):
+            row_frame = ctk.CTkFrame(
+                duration_rows,
+                fg_color="#242427",
+                corner_radius=12,
+            )
+            row_frame.grid(row=0, column=column, sticky="nsew", padx=4)
+            row_frame.grid_rowconfigure(0, weight=1)
+            row_frame.grid_columnconfigure(0, weight=1)
+            value_label = ctk.CTkLabel(
+                row_frame,
+                text="0",
+                font=ctk.CTkFont(size=24, weight="bold"),
+                text_color=ACCENT_BLUE,
+            )
+            value_label.grid(row=0, column=0, sticky="ew", padx=8, pady=(9, 0))
+            unit_label = ctk.CTkLabel(
+                row_frame,
+                text=title,
+                font=ctk.CTkFont(size=11, weight="bold"),
+                text_color=TEXT_SECONDARY,
+            )
+            unit_label.grid(row=1, column=0, sticky="ew", padx=4, pady=(0, 6))
+            progress = ctk.CTkProgressBar(
+                row_frame,
+                height=4,
+                progress_color=ACCENT_BLUE,
+                fg_color=CARD_BORDER,
+            )
+            progress.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 9))
+            progress.set(0)
+            self.home_duration_labels[key] = value_label
+            self.home_duration_progress[key] = progress
+            self.home_duration_progress_values[key] = 0.0
+            self.home_duration_progress_targets[key] = 0.0
+
+        action_card = ctk.CTkFrame(
+            self.home_scroll,
+            fg_color=CARD_BG,
+            corner_radius=16,
+            border_color=CARD_BORDER,
+            border_width=1,
+        )
+        action_card.pack(fill="x", padx=10, pady=8)
+        ctk.CTkLabel(
+            action_card,
+            text="⚡ Sofort-Aktionen",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=TEXT_PRIMARY,
+        ).pack(anchor="w", padx=20, pady=(12, 10))
+        self.home_actions_frame = ctk.CTkFrame(
+            action_card,
+            fg_color="transparent",
+        )
+        self.home_actions_frame.pack(fill="x", padx=14, pady=(0, 14))
+        for column in range(3):
+            self.home_actions_frame.grid_columnconfigure(column, weight=1)
+        ctk.CTkButton(
+            self.home_actions_frame,
+            text="🚀 Fokus · 25 Min.",
+            fg_color=ACCENT_GREEN,
+            hover_color="#1B5E20",
+            height=44,
+            command=lambda: self.start_timer_action(25),
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 5))
+        ctk.CTkButton(
+            self.home_actions_frame,
+            text="🚨 Bildschirm sperren",
+            fg_color=ACCENT_RED,
+            hover_color="#CC3D3D",
+            height=44,
+            command=self.trigger_panic,
+        ).grid(row=0, column=1, sticky="ew", padx=5)
+        ctk.CTkButton(
+            self.home_actions_frame,
+            text="⚠️ Streak zurücksetzen",
+            fg_color="#8B0000",
+            hover_color="#5C0000",
+            height=44,
+            command=self.confirm_streak_reset,
+        ).grid(row=0, column=2, sticky="ew", padx=(5, 0))
+        self.home_actions_frame.bind("<Configure>", self._layout_home_actions)
+        self._home_actions_layout = None
+
+        self.home_summary_card = ctk.CTkFrame(
+            self.home_scroll,
+            fg_color=CARD_BG,
+            corner_radius=16,
+            border_color=CARD_BORDER,
+            border_width=1,
+        )
+        self.home_summary_card.pack(fill="x", padx=10, pady=8)
+        ctk.CTkLabel(
+            self.home_summary_card,
+            text="💎 Gesparte Zeit & Geld",
+            font=ctk.CTkFont(size=17, weight="bold"),
+            text_color=ACCENT_GREEN,
+        ).pack(anchor="w", padx=20, pady=(18, 8))
+        ring_details = ctk.CTkFrame(
+            self.home_summary_card,
+            fg_color="transparent",
+        )
+        ring_details.pack(fill="x", padx=12, pady=(0, 8))
+        self.home_savings_canvas = ctk.CTkCanvas(
+            ring_details,
+            width=190,
+            height=190,
+            bg=CARD_BG,
+            highlightthickness=0,
+            borderwidth=0,
+        )
+        self.home_savings_canvas.pack(side="left", padx=(0, 8))
+        self.home_savings_canvas.create_arc(
+            15,
+            15,
+            175,
+            175,
+            start=90,
+            extent=359,
+            style="arc",
+            outline=CARD_BORDER,
+            width=12,
+        )
+        self.home_money_ring = self.home_savings_canvas.create_arc(
+            15,
+            15,
+            175,
+            175,
+            start=90,
+            extent=0,
+            style="arc",
+            outline=ACCENT_GREEN,
+            width=12,
+        )
+        self.home_savings_canvas.create_arc(
+            39,
+            39,
+            151,
+            151,
+            start=90,
+            extent=359,
+            style="arc",
+            outline=CARD_BORDER,
+            width=10,
+        )
+        self.home_time_ring = self.home_savings_canvas.create_arc(
+            39,
+            39,
+            151,
+            151,
+            start=90,
+            extent=0,
+            style="arc",
+            outline=ACCENT_BLUE,
+            width=10,
+        )
+        self.home_savings_canvas.create_text(
+            95,
+            91,
+            text="Sparziel",
+            fill=TEXT_PRIMARY,
+            font=("Segoe UI", 11, "bold"),
+        )
+        self.home_savings_canvas.create_text(
+            95,
+            111,
+            text="24 Std.",
+            fill=TEXT_SECONDARY,
+            font=("Segoe UI", 10),
+        )
+        ring_text = ctk.CTkFrame(ring_details, fg_color="transparent")
+        ring_text.pack(side="left", fill="both", expand=True)
+        self.lbl_home_savings = ctk.CTkLabel(
+            ring_text,
+            text="0,0 Std. gerettet",
+            font=ctk.CTkFont(size=25, weight="bold"),
+            text_color=ACCENT_BLUE,
+            anchor="w",
+        )
+        self.lbl_home_savings.pack(anchor="w", padx=8, pady=(7, 2))
+        self.lbl_home_money = ctk.CTkLabel(
+            ring_text,
+            text="0,00 €",
+            font=ctk.CTkFont(size=22, weight="bold"),
+            text_color=ACCENT_GREEN,
+            anchor="w",
+        )
+        self.lbl_home_money.pack(anchor="w", padx=8, pady=(0, 4))
+        self.lbl_home_ring_summary = ctk.CTkLabel(
+            ring_text,
+            text="Geld: 0 % vom Sparziel\nZeit: 0 % eines Tages",
+            font=ctk.CTkFont(size=12),
+            text_color=TEXT_SECONDARY,
+            anchor="w",
+            justify="left",
+        )
+        self.lbl_home_ring_summary.pack(anchor="w", padx=8, pady=(0, 5))
+        ctk.CTkLabel(
+            ring_text,
+            text="Entspricht ungefähr",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=TEXT_SECONDARY,
+        ).pack(anchor="w", padx=8, pady=(3, 3))
+        self.lbl_home_opportunity = ctk.CTkLabel(
+            ring_text,
+            text="Wird berechnet ...",
+            font=ctk.CTkFont(size=13),
+            text_color=TEXT_SECONDARY,
+            wraplength=430,
+            justify="left",
+        )
+        self.lbl_home_opportunity.pack(anchor="w", padx=8, pady=(0, 10))
+
+        goal_frame = ctk.CTkFrame(
+            self.home_summary_card,
+            fg_color="#242427",
+            corner_radius=12,
+        )
+        goal_frame.pack(fill="x", padx=14, pady=(0, 14))
+        ctk.CTkLabel(
+            goal_frame,
+            text="🎯 Dein Sparziel",
+            font=ctk.CTkFont(size=15, weight="bold"),
+            text_color=ACCENT_ORANGE,
+        ).pack(anchor="w", padx=14, pady=(10, 4))
+        goal_content = ctk.CTkFrame(goal_frame, fg_color="transparent")
+        goal_content.pack(fill="x", padx=14, pady=(0, 10))
+        goal_content.grid_columnconfigure(0, weight=3)
+        goal_content.grid_columnconfigure(1, weight=2)
+        self.lbl_home_goal = ctk.CTkLabel(
+            goal_content,
+            text="Sparziel wird geladen ...",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=TEXT_PRIMARY,
+            wraplength=520,
+            justify="left",
+            anchor="w",
+        )
+        self.lbl_home_goal.grid(row=0, column=0, sticky="ew", padx=(0, 16))
+        goal_progress_frame = ctk.CTkFrame(goal_content, fg_color="transparent")
+        self.home_goal_progress_frame = goal_progress_frame
+        goal_progress_frame.grid(row=0, column=1, sticky="ew")
+        goal_progress_frame.grid_columnconfigure(0, weight=1)
+        self.progress_home_goal = ctk.CTkProgressBar(
+            goal_progress_frame,
+            progress_color=ACCENT_GREEN,
+            fg_color=CARD_BORDER,
+        )
+        self.progress_home_goal.grid(row=0, column=0, sticky="ew", pady=(3, 4))
+        self.lbl_home_goal_eta = ctk.CTkLabel(
+            goal_progress_frame,
+            text="",
+            font=ctk.CTkFont(size=12),
+            text_color=TEXT_SECONDARY,
+            wraplength=360,
+            justify="left",
+            anchor="w",
+        )
+        self.lbl_home_goal_eta.grid(row=1, column=0, sticky="ew")
+
+        goal_content.bind("<Configure>", self._layout_home_goal)
+        self._home_goal_layout = None
+
         self.home_metrics_frame = ctk.CTkFrame(
             self.home_scroll,
             fg_color="transparent",
         )
         self.home_metrics_frame.pack(fill="x", padx=10, pady=8)
-        for column in (0, 1):
+        for column in range(2):
             self.home_metrics_frame.grid_columnconfigure(
                 column,
                 weight=1,
                 uniform="home_metrics",
             )
-
-        box_savings = ctk.CTkFrame(
-            self.home_metrics_frame,
-            fg_color=CARD_BG,
-            corner_radius=12,
-            border_color=CARD_BORDER,
-            border_width=1,
-        )
-        box_savings.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
-        ctk.CTkLabel(
-            box_savings,
-            text="💎 Gerettete Zeit & Wert",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            text_color=ACCENT_GREEN,
-        ).pack(anchor="w", padx=15, pady=(12, 4))
-        self.lbl_home_savings = ctk.CTkLabel(
-            box_savings,
-            text="0 Std. | 0,00 €",
-            font=ctk.CTkFont(size=15, weight="bold"),
-            wraplength=320,
-            justify="left",
-        )
-        self.lbl_home_savings.pack(anchor="w", padx=15, pady=(0, 12))
-
         box_quest = ctk.CTkFrame(
             self.home_metrics_frame,
             fg_color=CARD_BG,
@@ -861,7 +1539,8 @@ class ResoApp(ctk.CTk):
             border_color=CARD_BORDER,
             border_width=1,
         )
-        box_quest.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
+        self.home_quest_card = box_quest
+        box_quest.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
         ctk.CTkLabel(
             box_quest,
             text="🎯 Monats-Challenge",
@@ -873,21 +1552,20 @@ class ResoApp(ctk.CTk):
             text="Lade Challenge ...",
             font=ctk.CTkFont(size=12),
             text_color=TEXT_SECONDARY,
-            wraplength=320,
+            wraplength=380,
             justify="left",
         )
         self.lbl_home_quest.pack(anchor="w", padx=15, pady=(0, 12))
-        self.home_metrics_frame.bind("<Configure>", self._layout_home_metrics)
-        self._home_metrics_layout = None
 
         card_home_stoic = ctk.CTkFrame(
-            self.home_scroll,
+            self.home_metrics_frame,
             fg_color=CARD_BG,
-            corner_radius=12,
+            corner_radius=16,
             border_color=ACCENT_BLUE,
             border_width=1,
         )
-        card_home_stoic.pack(fill="x", padx=10, pady=8)
+        self.home_stoic_card = card_home_stoic
+        card_home_stoic.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
         ctk.CTkLabel(
             card_home_stoic,
             text="🏛️ Stoischer Leitsatz des Tages",
@@ -899,49 +1577,13 @@ class ResoApp(ctk.CTk):
             text="",
             font=ctk.CTkFont(size=12, slant="italic"),
             text_color=TEXT_PRIMARY,
-            wraplength=700,
+            wraplength=380,
             justify="left",
         )
         self.lbl_home_stoic.pack(anchor="w", padx=20, pady=(0, 12))
 
-        action_card = ctk.CTkFrame(
-            self.home_scroll,
-            fg_color=CARD_BG,
-            corner_radius=12,
-            border_color=CARD_BORDER,
-            border_width=1,
-        )
-        action_card.pack(fill="x", padx=10, pady=8)
-        ctk.CTkLabel(
-            action_card,
-            text="⚡ Sofort-Aktionen",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            text_color=TEXT_PRIMARY,
-        ).pack(anchor="w", padx=20, pady=(12, 10))
-        ctk.CTkButton(
-            action_card,
-            text="🚀 25 Min. Fokus sofort starten",
-            fg_color=ACCENT_GREEN,
-            hover_color="#1B5E20",
-            height=40,
-            command=lambda: self.start_timer_action(25),
-        ).pack(fill="x", padx=20, pady=(0, 10))
-        ctk.CTkButton(
-            action_card,
-            text="🚨 Notfall: Bildschirm sofort sperren",
-            fg_color=ACCENT_RED,
-            hover_color="#CC3D3D",
-            height=35,
-            command=self.trigger_panic,
-        ).pack(fill="x", padx=20, pady=(0, 15))
-        ctk.CTkButton(
-            action_card,
-            text="⚠️ Rückschlag / Streak zurücksetzen",
-            fg_color="#8B0000",
-            hover_color="#5C0000",
-            height=35,
-            command=self.confirm_streak_reset,
-        ).pack(fill="x", padx=20, pady=(0, 15))
+        self.home_metrics_frame.bind("<Configure>", self._layout_home_metrics)
+        self._home_metrics_layout = None
 
         # --- TAB 1: TIMER & PANIC ---
         timer_scroll = ctk.CTkScrollableFrame(self.tab_timer, fg_color="transparent")
@@ -1729,11 +2371,14 @@ class ResoApp(ctk.CTk):
                 community_switches,
                 text=(
                     "Die Chat-Verbindung startet erst nach deiner Bestätigung. "
-                    "Es werden keine Kontodaten mit dem Chatpartner geteilt; "
-                    "der Serverbetreiber kann Verbindungsmetadaten sehen. "
-                    "Gesprächspartner sind nicht verifiziert. Teile keine "
-                    "persönlichen Daten. Nachrichten werden nicht gespeichert; "
-                    "kein Krisen- oder professioneller Beratungsdienst."
+                    "Profil, Nachrichten, Sticker und Bilder werden Ende-zu-Ende "
+                    "verschlüsselt; der Server kann Inhalte nicht lesen. Vergleicht "
+                    "den Sicherheits-Fingerprint über einen anderen Kanal, da ein "
+                    "manipulierter Server Schlüssel austauschen könnte. Es werden "
+                    "keine Kontodaten mit dem Chatpartner geteilt; der Server sieht "
+                    "Verbindungsmetadaten. Gesprächspartner sind nicht verifiziert. "
+                    "Teile keine persönlichen Daten. Nachrichten werden nicht "
+                    "gespeichert; kein Krisen- oder professioneller Beratungsdienst."
                 ),
                 font=ctk.CTkFont(size=10),
                 text_color=TEXT_SECONDARY,
@@ -1753,8 +2398,10 @@ class ResoApp(ctk.CTk):
                      "überschreibt lokale Fortschrittsdaten. Emotionale Reframing- "
                      "und Trigger-Zeitdaten sowie Codex, Zukunftsbrief und "
                      "Tipp-Rhythmus-Einstellung bleiben aus Datenschutzgründen lokal. "
-                     "Google OAuth Desktop-Client und GOOGLE_OAUTH_CLIENT_ID "
-                     "müssen eingerichtet sein (siehe README.md).",
+                     "Google meldet dich an und verknüpft dein Konto mit dem Reşo-"
+                     "Cloud-Backup; es wird kein Google-Drive-Zugriff angefordert. "
+                     "Dafür muss ein Google OAuth Desktop-Client eingerichtet sein "
+                     "(siehe README.md).",
                 font=ctk.CTkFont(size=11),
                 text_color=TEXT_SECONDARY,
                 wraplength=680,
@@ -1890,6 +2537,41 @@ class ResoApp(ctk.CTk):
             self.monitor.set_whitelist_mode(True, apps)
 
     def connect_google_account(self):
+        from importlib import import_module
+
+        try:
+            google_oauth = import_module("google_oauth")
+        except ModuleNotFoundError:
+            self.lbl_cloud_status.configure(
+                text="Google-Anmeldung ist nicht verfügbar (google_oauth-Modul fehlt).",
+                text_color=ACCENT_RED,
+            )
+            return
+
+        if not google_oauth.is_google_oauth_configured():
+            try:
+                browser_opened = google_oauth.open_google_oauth_setup()
+            except Exception as error:
+                self.lbl_cloud_status.configure(
+                    text=f"Google-OAuth-Einrichtung konnte nicht geöffnet werden: {error}",
+                    text_color=ACCENT_RED,
+                )
+                return
+            message = (
+                "GOOGLE_OAUTH_CLIENT_ID fehlt. "
+                "Im geöffneten Google Cloud Console-Bereich einen OAuth-Client "
+                "vom Typ „Desktop-App“ erstellen, die Client-ID setzen und Reşo "
+                "neu starten. Danach öffnet „Mit Google verbinden“ die "
+                "Google-Anmeldeseite zur Zustimmung."
+            )
+            if not browser_opened:
+                message += " Der Browser konnte nicht automatisch geöffnet werden."
+            self.lbl_cloud_status.configure(
+                text=f"Status: {message}",
+                text_color=ACCENT_ORANGE,
+            )
+            return
+
         self.lbl_cloud_status.configure(
             text="Status: Google-Browser wird geöffnet ... Bitte anmelden.",
             text_color=TEXT_SECONDARY,
@@ -1898,9 +2580,7 @@ class ResoApp(ctk.CTk):
 
         def finish_login():
             try:
-                from google_oauth import login_with_google
-
-                userinfo, token_data = login_with_google()
+                userinfo, token_data = google_oauth.login_with_google()
                 self.stats_manager.connect_google_account(userinfo, token_data)
                 email = userinfo.get("email") or userinfo.get("sub", "Google-Konto")
                 if self.stats_manager.sync_full_backup():
@@ -2461,17 +3141,24 @@ class ResoApp(ctk.CTk):
         )
         
         rank_data = self.stats_manager.get_user_rank_and_badges()
-        self.lbl_level.configure(text=f"Rang: {rank_data['rank']}")
         self.lbl_streak_full.configure(text=f"🔥 Aktuelle Streak: {streak} Tage  |  🏆 Rekord: {data.get('longest_streak', 0)} Tage")
-        self.lbl_home_streak.configure(
-            text=(
-                f"Rang: {rank_data['rank']}  |  🔥 Streak: {streak} Tage  |  "
-                f"⏱️ Aktive Streak: {self.stats_manager.get_detailed_streak()}"
-            )
+        user_name = data.get("community_author_name", "")
+        if isinstance(user_name, str):
+            user_name = " ".join(user_name.split())
+        welcome_text = (
+            f"Willkommen zurück, {user_name}!"
+            if isinstance(user_name, str)
+            and user_name
+            and len(user_name) <= 32
+            and user_name.isprintable()
+            else "Willkommen zurück!"
         )
-        self.lbl_home_savings.configure(
-            text=f"{saved_hours} Std.  |  {self._format_euro(total_money)}"
-        )
+        self.lbl_home_welcome.configure(text=welcome_text)
+        self.lbl_home_rank.configure(text=f"Rang: {rank_data['rank']}")
+        self.lbl_home_streak.configure(text=f"{streak} Tage")
+        self._update_home_sobriety_clock()
+        self.lbl_home_savings.configure(text=f"{saved_hours} Std. gerettet")
+        self.lbl_home_money.configure(text=self._format_euro(total_money))
         badge_summary = "  |  ".join(
             f"{'✅' if badge['unlocked'] else '🔒'} {badge['name']}"
             for badge in rank_data["badges"]
@@ -2489,12 +3176,59 @@ class ResoApp(ctk.CTk):
             )
         )
         self.progress_savings_goal.set(savings_goal["progress"] / 100.0)
+        money_progress = min(max(savings_goal["progress"] / 100.0, 0.0), 1.0)
+        time_progress = min(max(saved_hours / 24.0, 0.0), 1.0)
+        self.home_savings_canvas.itemconfigure(
+            self.home_money_ring,
+            extent=-359 * money_progress,
+        )
+        self.home_savings_canvas.itemconfigure(
+            self.home_time_ring,
+            extent=-359 * time_progress,
+        )
+        self.lbl_home_ring_summary.configure(
+            text=(
+                f"Geld: {money_progress:.0%} vom Sparziel\n"
+                f"Zeit: {time_progress:.0%} eines Tages"
+            )
+        )
+        self.lbl_home_goal.configure(
+            text=(
+                f"{savings_goal['name']}  ·  "
+                f"{self._format_euro(savings_goal['saved'])} von "
+                f"{self._format_euro(savings_goal['target'])} "
+                f"({str(savings_goal['progress']).replace('.', ',')}%)"
+            )
+        )
+        self.progress_home_goal.set(savings_goal["progress"] / 100.0)
+        amount_remaining = max(0.0, savings_goal["target"] - savings_goal["saved"])
+        if amount_remaining == 0:
+            goal_eta = "Ziel erreicht!"
+        elif daily_expense > 0:
+            days_remaining = math.ceil(amount_remaining / daily_expense)
+            goal_eta = (
+                f"Voraussichtlich in {days_remaining} Tagen erreicht "
+                "(bei gleichbleibender täglicher Ersparnis)."
+            )
+        else:
+            goal_eta = (
+                "Für eine Zeitprognose tägliche Ausgaben-Ersparnis "
+                "in den Einstellungen festlegen."
+            )
+        self.lbl_home_goal_eta.configure(text=goal_eta)
         opportunity = self.stats_manager.get_opportunity_equivalents()
         self.lbl_opportunity_detail.configure(
             text=(
                 f"📚 {opportunity['pages']} Seiten  |  "
                 f"🏃 {opportunity['kilometers']} km  |  "
                 f"📖 {opportunity['books']} Bücher äquivalent"
+            )
+        )
+        self.lbl_home_opportunity.configure(
+            text=(
+                f"{opportunity['pages']} Seiten · "
+                f"{opportunity['kilometers']} km · "
+                f"{opportunity['books']} Bücher"
             )
         )
 
@@ -2534,14 +3268,11 @@ class ResoApp(ctk.CTk):
             )
 
     def _live_ticker(self):
+        data = self.stats_manager.get_stats()
         rank_data = self.stats_manager.get_user_rank_and_badges()
-        streak = self.stats_manager.get_stats().get("streak", 0)
-        self.lbl_home_streak.configure(
-            text=(
-                f"Rang: {rank_data['rank']}  |  🔥 Streak: {streak} Tage  |  "
-                f"⏱️ Aktive Streak: {self.stats_manager.get_detailed_streak()}"
-            )
-        )
+        self.lbl_home_rank.configure(text=f"Rang: {rank_data['rank']}")
+        self.lbl_home_streak.configure(text=f"{data.get('streak', 0)} Tage")
+        self._update_home_sobriety_clock()
         self._streak_ticker_id = self.after(1000, self._live_ticker)
 
     def confirm_streak_reset(self):
@@ -2654,20 +3385,178 @@ class ResoApp(ctk.CTk):
             )
         )
 
+    def _layout_home_goal(self, event):
+        layout = "stacked" if event.width < 650 else "columns"
+        if layout == self._home_goal_layout:
+            return
+        self._home_goal_layout = layout
+        if layout == "stacked":
+            self.lbl_home_goal.grid_configure(
+                row=0,
+                column=0,
+                columnspan=2,
+                padx=0,
+                pady=(0, 8),
+            )
+            self.home_goal_progress_frame.grid_configure(
+                row=1,
+                column=0,
+                columnspan=2,
+                padx=0,
+                pady=0,
+            )
+        else:
+            self.lbl_home_goal.grid_configure(
+                row=0,
+                column=0,
+                columnspan=1,
+                padx=(0, 16),
+                pady=0,
+            )
+            self.home_goal_progress_frame.grid_configure(
+                row=0,
+                column=1,
+                columnspan=1,
+                padx=0,
+                pady=0,
+            )
+
     def _layout_home_metrics(self, event):
-        layout = "stacked" if event.width < 620 else "columns"
+        layout = "stacked" if event.width < 760 else "columns"
         if layout == self._home_metrics_layout:
             return
         self._home_metrics_layout = layout
-        children = self.home_metrics_frame.winfo_children()
-        if len(children) < 2:
-            return
         if layout == "stacked":
-            children[0].grid_configure(row=0, column=0, columnspan=2, padx=0, pady=(0, 8))
-            children[1].grid_configure(row=1, column=0, columnspan=2, padx=0, pady=(0, 0))
+            self.home_quest_card.grid_configure(
+                row=0,
+                column=0,
+                columnspan=2,
+                padx=0,
+                pady=(0, 8),
+            )
+            self.home_stoic_card.grid_configure(
+                row=1,
+                column=0,
+                columnspan=2,
+                padx=0,
+                pady=0,
+            )
         else:
-            children[0].grid_configure(row=0, column=0, columnspan=1, padx=(0, 6), pady=0)
-            children[1].grid_configure(row=0, column=1, columnspan=1, padx=(6, 0), pady=0)
+            self.home_quest_card.grid_configure(
+                row=0,
+                column=0,
+                columnspan=1,
+                padx=(0, 5),
+                pady=0,
+            )
+            self.home_stoic_card.grid_configure(
+                row=0,
+                column=1,
+                columnspan=1,
+                padx=(5, 0),
+                pady=0,
+            )
+
+    def _layout_home_actions(self, event):
+        layout = "stacked" if event.width < 720 else "columns"
+        if layout == self._home_actions_layout:
+            return
+        self._home_actions_layout = layout
+        for index, button in enumerate(self.home_actions_frame.winfo_children()):
+            if layout == "stacked":
+                button.grid_configure(
+                    row=index,
+                    column=0,
+                    padx=0,
+                    pady=3,
+                    sticky="ew",
+                )
+            else:
+                button.grid_configure(
+                    row=0,
+                    column=index,
+                    padx=(0, 5) if index == 0 else (5, 0) if index == 2 else 5,
+                    pady=0,
+                    sticky="ew",
+                )
+
+    def _update_home_sobriety_clock(self):
+        components = self.stats_manager.get_detailed_streak_components()
+        total_days = (
+            components["years"] * 365
+            + components["months"] * 30
+            + components["weeks"] * 7
+            + components["days"]
+        )
+        display_values = {
+            "days": total_days,
+            "hours": components["hours"],
+            "minutes": components["minutes"],
+            "seconds": components["seconds"],
+        }
+        for unit, label in self.home_duration_labels.items():
+            label.configure(text=str(display_values[unit]))
+
+        fractions = {
+            "days": total_days % 30 / 30,
+            "hours": (components["minutes"] * 60 + components["seconds"]) / 3600,
+            "minutes": components["seconds"] / 60,
+            "seconds": datetime.now().microsecond / 1_000_000,
+        }
+        self._home_clock_progress_starts = self.home_duration_progress_values.copy()
+        self.home_duration_progress_targets = {
+            unit: min(max(progress, 0.0), 1.0)
+            for unit, progress in fractions.items()
+        }
+        self._home_clock_animation_started_at = time.monotonic()
+        if self._home_clock_animation_id is None and any(
+            abs(
+                self.home_duration_progress_values[unit]
+                - self.home_duration_progress_targets[unit]
+            )
+            > 0.001
+            for unit in self.home_duration_progress_targets
+        ):
+            self._home_clock_animation_id = self.after(
+                16,
+                self._animate_home_clock_progress,
+            )
+
+    def _animate_home_clock_progress(self):
+        elapsed = time.monotonic() - self._home_clock_animation_started_at
+        progress = min(elapsed / 0.35, 1.0)
+        eased_progress = 1 - (1 - progress) ** 3
+        for unit, target in self.home_duration_progress_targets.items():
+            start = self._home_clock_progress_starts[unit]
+            value = start + (target - start) * eased_progress
+            self.home_duration_progress[unit].set(value)
+            self.home_duration_progress_values[unit] = value
+        if progress < 1:
+            self._home_clock_animation_id = self.after(
+                16,
+                self._animate_home_clock_progress,
+            )
+        else:
+            self._home_clock_animation_id = None
+
+    def _animate_home_flame(self):
+        animation = (
+            (25, ACCENT_ORANGE),
+            (28, "#FFD60A"),
+            (30, ACCENT_RED),
+            (28, ACCENT_ORANGE),
+        )
+        size, color = animation[self._home_flame_animation_phase % len(animation)]
+        self.home_flame_label.configure(
+            font=ctk.CTkFont(size=size),
+            text_color=color,
+        )
+        self._home_flame_animation_phase += 1
+        self._home_flame_animation_id = self.after(
+            350,
+            self._animate_home_flame,
+        )
+
 
     @staticmethod
     def _format_euro(value):

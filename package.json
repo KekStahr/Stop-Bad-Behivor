@@ -1,0 +1,54 @@
+{
+  "name": "reso-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Reşo desktop web app",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "check": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check gui/app.js && node --check gui/api.js && node --check gui/pages/home.js && node --check gui/pages/timer.js && node --check gui/pages/stats.js && node --check gui/pages/settings.js && node --check gui/pages/community.js",
+    "build:backend": "python -m PyInstaller --noconfirm --clean --distpath electron/backend --workpath build/backend backend/reso-backend.spec",
+    "build": "npm run build:backend && electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^45.3.0",
+    "electron-builder": "26.18.0"
+  },
+  "overrides": {
+    "@electron/universal": {
+      "minimatch": "^11.0.1"
+    },
+    "app-builder-lib": {
+      "minimatch": "^11.0.1"
+    }
+  },
+  "build": {
+    "appId": "de.reso.desktop",
+    "productName": "Reşo",
+    "files": [
+      "electron/**/*",
+      "!electron/backend/**",
+      "gui/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "electron/backend/reso-backend",
+        "to": "backend",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "allowScripts": {
+    "electron@39.8.10": true,
+    "electron-winstaller@5.4.0": true
+  }
+}
