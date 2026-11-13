@@ -35,15 +35,18 @@ async function navigate(page) {
   document.querySelectorAll("[data-page]").forEach((button) => {
     button.classList.toggle("is-active", button.dataset.page === page);
   });
-  document.querySelector("#page-title").textContent = pages[page].title;
+  const pageTitle = document.querySelector("#page-title");
+  if (pageTitle) pageTitle.textContent = pages[page].title;
   content.classList.remove("page-enter");
   content.replaceChildren();
   try {
     activeCleanup = await pages[page].render(content, { api, showToast, refresh: () => navigate(activePage) });
-    document.querySelector("#connection-status").textContent = "Lokal verbunden";
+    const connectionStatus = document.querySelector("#connection-status");
+    if (connectionStatus) connectionStatus.textContent = "Lokal verbunden";
     content.classList.add("page-enter");
   } catch (error) {
-    document.querySelector("#connection-status").textContent = "Verbindung gestört";
+    const connectionStatus = document.querySelector("#connection-status");
+    if (connectionStatus) connectionStatus.textContent = "Verbindung gestört";
     content.innerHTML = `<div class="error-card"><strong>Die Seite konnte nicht geladen werden.</strong><p>${error.message}</p><button class="button button-muted" id="retry-page">Erneut versuchen</button></div>`;
     content.querySelector("#retry-page").addEventListener("click", () => navigate(activePage));
   }

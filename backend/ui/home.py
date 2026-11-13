@@ -160,7 +160,8 @@ class HomeMixin:
         if not messagebox.askyesno(
             "Streak zurücksetzen",
             "Möchtest du deine Streak wirklich zurücksetzen? "
-            "Saisonale Badges werden zurückgesetzt; dein Streak-Rekord bleibt erhalten.",
+            "Alle Streak- und Saison-Erfolge werden zurückgesetzt; "
+            "dein Streak-Rekord bleibt erhalten.",
             parent=self,
         ):
             return

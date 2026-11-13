@@ -130,6 +130,11 @@ class ApiMixin:
             self.reset_timer_ui()
             return 200, {"timer": self._web_timer_state()}
 
+        if method == "POST" and path == "/api/streak/reset":
+            self.stats_manager.reset_streak()
+            self.update_stats_display()
+            return 200, {"streakTime": self.stats_manager.get_detailed_streak_components()}
+
         if method == "POST" and path == "/api/settings":
             self._save_web_settings(body)
             return 200, {"settings": self._web_settings_state()}

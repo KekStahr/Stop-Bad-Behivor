@@ -120,10 +120,10 @@ class PreferenceStatsMixin:
             rank = "🌱 Willens-Anwärter"
 
         badges = [
-            {"name": "Erster Schritt", "unlocked": streak >= 1, "desc": "1 Tag geschafft"},
-            {"name": "Wochen-Sieger", "unlocked": streak >= 7, "desc": "7 Tage Streak"},
-            {"name": "Eiserner Wille", "unlocked": streak >= 14, "desc": "14 Tage Streak"},
-            {"name": "Unbeugsam", "unlocked": streak >= 30, "desc": "30 Tage Meister-Streak"},
+            {"name": "Erster Schritt", "icon": "🌱", "unlocked": streak >= 1, "desc": "1 Tag geschafft"},
+            {"name": "Wochen-Sieger", "icon": "🏆", "unlocked": streak >= 7, "desc": "7 Tage Streak"},
+            {"name": "Eiserner Wille", "icon": "🛡️", "unlocked": streak >= 14, "desc": "14 Tage Streak"},
+            {"name": "Unbeugsam", "icon": "👑", "unlocked": streak >= 30, "desc": "30 Tage Meister-Streak"},
         ]
         return {"rank": rank, "badges": badges, "streak": streak, "longest": longest}
     def set_savings_goal(self, goal_name: str, goal_amount: float):
