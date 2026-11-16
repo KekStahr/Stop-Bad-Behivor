@@ -1,6 +1,8 @@
 // Global keyboard monitor: trigger words and very fast typing.
 // Uses the native `uiohook-napi` module when installed; without it the app runs, just without detection.
-// Only the last 50 typed characters are kept in memory and never stored or sent anywhere.
+// Only the last 60 typed characters are kept in memory and never stored or sent anywhere.
+
+const { compile, findMatch } = require("./matcher.cjs");
 
 let hook = null;
 try {
@@ -42,8 +44,8 @@ function createMonitor({ onTrigger, onStress }) {
   let lastStress = -Infinity;
 
   function handleChar(character, at = Date.now()) {
-    buffer = (buffer + character).slice(-50);
-    const match = words.find((word) => buffer.includes(word));
+    buffer = (buffer + character).slice(-60);
+    const match = findMatch(words, buffer);
     if (match) {
       buffer = "";
       onTrigger(match);
@@ -67,7 +69,10 @@ function createMonitor({ onTrigger, onStress }) {
       const character = keyMap.get(event.keycode);
       if (character) handleChar(character);
       else if (hook.UiohookKey && event.keycode === hook.UiohookKey.Backspace) buffer = buffer.slice(0, -1);
-      else if (hook.UiohookKey && event.keycode === hook.UiohookKey.Enter) buffer = "";
+      else if (hook.UiohookKey && event.keycode === hook.UiohookKey.Enter) {
+        handleChar(" "); // Enter ends a word – whole-word triggers are checked first
+        buffer = "";
+      }
     });
     hook.uIOhook.start();
     return true;
@@ -82,7 +87,7 @@ function createMonitor({ onTrigger, onStress }) {
   }
 
   function configure({ triggerWords = [], stressDetection = false, layout = "de" }) {
-    words = triggerWords.map((word) => String(word).toLowerCase()).filter(Boolean);
+    words = compile(triggerWords.map((word) => String(word).toLowerCase()).filter(Boolean));
     stress = Boolean(stressDetection);
     keyMap = buildKeyMap(layout);
   }

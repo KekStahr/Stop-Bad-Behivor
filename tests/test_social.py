@@ -213,6 +213,16 @@ def test_faith_rooms_are_hidden_and_separate():
     assert "faith" not in str(post("sync", BOB).json()["me"])  # religion is never stored
 
 
+def test_helper_can_choose_pause():
+    helper = {"helper_enabled": True, "helper_schedule": "", "tz_offset": 60}
+    gina = {"author_id": "3" * 32, "author_name": "Gina"}
+    post("sync", gina, **helper)
+    paused = post("help", gina, action="pause", pause_minutes=15).json()["paused_until"]
+    import time
+    assert 14 * 60 < paused - time.time() <= 15 * 60
+    assert post("help", gina, action="pause", pause_minutes=0).json()["paused_until"] - time.time() <= 60  # at least 1 minute
+
+
 def test_schedule():
     profile = social.CommunityProfileDB(helper_schedule='{"days": [0], "from": "22:00", "to": "02:00"}', tz_offset=0)
     monday_23 = 1700521200  # 2023-11-20 23:00 UTC, a Monday
@@ -227,5 +237,6 @@ if __name__ == "__main__":
     test_help_flow()
     test_crisis_chat_is_anonymous_timed_and_rated()
     test_faith_rooms_are_hidden_and_separate()
+    test_helper_can_choose_pause()
     test_schedule()
     print("ok")

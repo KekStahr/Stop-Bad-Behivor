@@ -278,6 +278,14 @@ svg {
   box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
+.brand-logo {
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border-radius: 11px;
+  box-shadow: 0 4px 14px rgba(22, 115, 95, 0.4);
+}
+
 .brand-copy strong {
   display: block;
   font-size: 1.05rem;
@@ -375,6 +383,35 @@ svg {
   font-weight: 600;
   white-space: nowrap;
   transition: transform var(--t-fast) var(--spring), background var(--t-fast);
+}
+
+.donate-button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: -4px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 12px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--label-2);
+  background: transparent;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+
+.donate-button:hover {
+  color: #b8860b;
+  background: color-mix(in srgb, #f5c242 16%, transparent);
+}
+
+:root[data-compact="true"] .donate-button span + span {
+  display: none;
+}
+
+:root[data-compact="true"] .donate-button {
+  justify-content: center;
 }
 
 .sos-button svg {
@@ -3057,4 +3094,41 @@ input[type="range"]:disabled {
   .rings {
     transform: scale(0.85);
   }
+}
+
+/* Energy: an endless animation keeps CPU and graphics busy even when nothing changes.
+   Decorative loops play a few times and then rest; functional ones (spinner, breathing,
+   searching radar) keep running while they are visible. */
+.status-pill.is-live i,
+.hero-empty-icon,
+.wave-pill-icon,
+.capsule-icon,
+.risk-pulse,
+.empty-visual > span,
+.live-dot,
+.celebration-icon,
+.quit-card-icon,
+.ai-status i,
+.faith-light,
+.faith-backdrop::before,
+.faith-setup-glow {
+  animation-iteration-count: 4 !important;
+}
+
+/* Energy saver (no GPU): blur behind glass cards is very expensive on the CPU, so cards become
+   a little more opaque instead. */
+:root[data-energy="on"] *,
+:root[data-energy="on"] *::before,
+:root[data-energy="on"] *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+:root[data-energy="on"] .faith-page[data-faith-theme="dark"] {
+  --surface: rgba(22, 24, 34, 0.9);
+  --surface-2: rgba(30, 32, 44, 0.94);
+}
+
+:root[data-energy="on"] .faith-page[data-faith-theme="light"] {
+  --surface: rgba(255, 253, 248, 0.94);
 }

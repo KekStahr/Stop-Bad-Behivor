@@ -232,8 +232,8 @@ export function openOnboarding({ api, showToast, onDone }) {
   let step = 0;
   const steps = [
     () => `
-      <div class="onboard-hero"><div class="brand-mark big">R</div>
-        <h2>Willkommen bei Reşo</h2>
+      <div class="onboard-hero"><img class="brand-logo big" src="assets/logo.svg" alt="Life">
+        <h2>Willkommen bei Life</h2>
         <p class="sheet-text">Schön, dass du da bist. Der erste Schritt ist der schwerste – und den machst du gerade. Fünf kurze Fragen, dann geht's los.</p></div>`,
     () => `
       <h3>Wie dürfen wir dich nennen?</h3>
@@ -256,7 +256,7 @@ export function openOnboarding({ api, showToast, onDone }) {
       <label class="pledge">
         <input type="checkbox" id="ob-protect" ${state.protect ? "checked" : ""}>
         <span class="pledge-box">✓</span>
-        <span><strong>Schutz aktivieren</strong><small>Reşo erkennt typische Begriffe zu deiner Sucht und hilft dir genau in dem Moment.</small></span>
+        <span><strong>Schutz aktivieren</strong><small>Life erkennt typische Begriffe zu deiner Sucht und hilft dir genau in dem Moment.</small></span>
       </label>`,
     () => `
       <h3>Dein Warum</h3>

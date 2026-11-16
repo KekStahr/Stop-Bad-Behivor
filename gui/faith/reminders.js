@@ -1,5 +1,5 @@
 // Reminders for prayer times (Islam) and daily prayers / Sunday service (Christianity).
-// Runs in the background while Reşo sits in the tray.
+// Runs in the background while Life sits in the tray.
 import { notify, chime } from "../ui.js";
 import { faith, loadFaith, activeReligions, prayerConfig, todayKey } from "./state.js";
 import { prayerTimes, ymdIn, formatClock, PRAYERS } from "./calc.js";
@@ -15,7 +15,7 @@ function once(key, action) {
 
 function remind(title, body, showToast) {
   chime("message");
-  notify(`Reşo · ${title}`, body);
+  notify(`Life · ${title}`, body);
   showToast?.(`${title} – ${body}`);
 }
 
@@ -41,6 +41,16 @@ export function checkReminders(now = new Date(), showToast) {
             `${prayer.hint} um ${formatClock(at, config.timeZone)}. Eine kleine Pause für dein Herz.`,
             showToast,
           ));
+        }
+      }
+      if (current.tahajjudReminder) {
+        // the night that started yesterday evening, and the one starting tonight
+        const yesterday = prayerTimes(ymdIn(config.timeZone, new Date(now.getTime() - 86400000)), config);
+        const tomorrow = prayerTimes(ymdIn(config.timeZone, new Date(now.getTime() + 86400000)), config);
+        for (const [from, to] of [[yesterday.maghrib, times.fajr], [times.maghrib, tomorrow.fajr]]) {
+          if (!from || !to) continue;
+          const third = new Date(from.getTime() + ((to - from) * 2) / 3);
+          if (minute(now) === minute(third)) once(`tahajjud:${minute(third)}`, () => remind("Tahadschud", "Das letzte Drittel der Nacht beginnt – die Zeit der Erhörung.", showToast));
         }
       }
       const friday = new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: config.timeZone }).format(now) === "Fri";

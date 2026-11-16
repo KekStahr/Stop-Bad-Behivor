@@ -2,6 +2,7 @@ import { escapeHtml } from "../api.js";
 import { faith, loadFaith, activeReligions, prayerConfig } from "../faith/state.js";
 import { verseOfDay } from "../faith/data.js";
 import { nextPrayer, formatClock } from "../faith/calc.js";
+import { loadVerse } from "../faith/ui.js";
 import { prefs, setPref, formatMoney } from "../prefs.js";
 import { ring, setRing, confirmSheet, openSheet, formatNumber } from "../ui.js";
 import { ADDICTIONS, MILESTONES, MAJOR_MILESTONES, benefitTimeline, nextMilestone, soberSeconds, splitDuration, humanDuration } from "../recovery.js";
@@ -120,7 +121,7 @@ export async function render(root, { api, showToast, refresh, goTo }) {
 
     <section class="card quit-card reveal" id="quit-card" hidden>
       <span class="quit-card-icon">⏳</span>
-      <div><strong>Reşo beendet sich in <b id="quit-left">30:00</b></strong><small>Bis dahin schütze ich dich weiter. Du kannst es dir jederzeit anders überlegen.</small></div>
+      <div><strong>Life beendet sich in <b id="quit-left">30:00</b></strong><small>Bis dahin schütze ich dich weiter. Du kannst es dir jederzeit anders überlegen.</small></div>
       <button class="button button-primary small" id="quit-cancel" type="button">Abbrechen – ich bleibe</button>
     </section>
 
@@ -174,18 +175,29 @@ export async function render(root, { api, showToast, refresh, goTo }) {
     </section>
 
     ${prefs.aiWarnings ? `
-      <section class="card ai-home reveal ${soon ? "is-soon" : ""}" style="--tone:${soon ? nextRisk.label.color : nowLabel.color}">
+      <section class="card ai-home ai-v2 reveal ${soon ? "is-soon" : ""}" style="--tone:${soon ? nextRisk.label.color : nowLabel.color}">
         <div class="ai-home-clock">${riskClock(profile, nowHour)}</div>
-        <div class="ai-home-copy">
-          <span class="ai-badge">✦ Frühwarnsystem</span>
+        <div class="ai-main">
+          <header class="ai-head">
+            <span class="ai-badge">✦ Frühwarnsystem</span>
+            <span class="ai-status"><i></i>${escapeHtml(soon ? nextRisk.label.text : nowLabel.text)}</span>
+          </header>
           ${model.ready ? `
-            <h3>${soon ? (nextRisk.offset === 0 ? "Jetzt wird's oft schwer" : `In ${nextRisk.offset} ${nextRisk.offset === 1 ? "Stunde" : "Stunden"} wird's oft schwer`) : `Jetzt: ${nowLabel.text}`}</h3>
-            <p>${nextRisk ? `Nächste schwierige Zeit: <strong>${whenLabel}</strong>` : "Heute ist keine schwierige Zeit in Sicht. 🌿"}</p>
-            ${wavesAtThatTime ? `<p class="ai-proof">💪 Um diese Uhrzeit hast du schon ${wavesAtThatTime} ${wavesAtThatTime === 1 ? "Welle" : "Wellen"} besiegt.</p>` : ""}
-            <div class="window-chips">${topWindows(model, 3).map((window) => `<span class="window-chip" style="--tone:${riskLabel(window.level).color}">${escapeHtml(window.label)}</span>`).join("")}</div>`
-          : `<h3>${assessment.reasons.length ? `Jetzt: ${nowLabel.text}` : "Lernt dich gerade kennen"}</h3><p>Sobald ein paar Momente erfasst sind, warnt Reşo dich vor schwierigen Zeiten – bevor sie kommen.</p>`}
-          ${assessment.reasons.length ? `<div class="reason-chips">${assessment.reasons.map((reason) => `<span>${reason.icon} ${escapeHtml(reason.text)}</span>`).join("")}</div>` : ""}
-          ${usage.sessionMinutes ? `<p class="pc-time">💻 Seit ${pcLabel(usage.sessionMinutes)} am PC · heute ${pcLabel(usage.todayMinutes || 0)} · ${assessment.breakIn ? `Pause empfohlen in ${pcLabel(assessment.breakIn)}` : "<strong>Zeit für eine Pause</strong>"}</p>` : ""}
+            <h3>${soon ? (nextRisk.offset === 0 ? "Jetzt wird es oft schwer für dich" : `In ${nextRisk.offset} ${nextRisk.offset === 1 ? "Stunde" : "Stunden"} wird es oft schwer`)
+              : nowLabel.key !== "low" ? "Gerade ist eine schwierige Zeit für dich" : "Alles ruhig – genieß den Moment 🌿"}</h3>
+            <p class="ai-lead">${nextRisk && !(soon && nextRisk.offset === 0) ? `Nächste schwierige Zeit: <strong>${whenLabel}</strong>` : nowLabel.key !== "low" ? "Bleib achtsam. Danach ist heute nichts Schwieriges mehr in Sicht." : "Heute ist keine schwierige Zeit in Sicht."}</p>
+            ${wavesAtThatTime ? `<p class="ai-proof">💪 Um diese Uhrzeit hast du schon ${wavesAtThatTime} ${wavesAtThatTime === 1 ? "Welle" : "Wellen"} besiegt.</p>` : ""}`
+          : `<h3>${assessment.reasons.length ? `Jetzt: ${nowLabel.text}` : "Life lernt dich gerade kennen"}</h3><p class="ai-lead">Sobald ein paar Momente erfasst sind, warnt Life dich vor schwierigen Zeiten – bevor sie kommen.</p>`}
+          <div class="ai-blocks">
+            ${assessment.reasons.length ? `<div class="ai-block"><small>Warum gerade jetzt</small><ul>${assessment.reasons.map((reason) => `<li><span>${reason.icon}</span>${escapeHtml(reason.text)}</li>`).join("")}</ul></div>` : ""}
+            ${model.ready && topWindows(model, 3).length ? `<div class="ai-block"><small>Deine schwierigsten Zeiten</small><div class="ai-windows">${topWindows(model, 3).map((window) => `<span style="--tone:${riskLabel(window.level).color}"><i></i>${escapeHtml(window.label)}</span>`).join("")}</div></div>` : ""}
+          </div>
+          ${usage.sessionMinutes ? `
+            <div class="ai-stats">
+              <div><span>💻</span><b>${pcLabel(usage.sessionMinutes)}</b><small>am Stück am PC</small></div>
+              <div><span>📅</span><b>${pcLabel(usage.todayMinutes || 0)}</b><small>heute insgesamt</small></div>
+              <div class="${assessment.breakIn ? "" : "is-due"}"><span>☕</span><b>${assessment.breakIn ? pcLabel(assessment.breakIn) : "Jetzt"}</b><small>${assessment.breakIn ? "bis zur Pause" : "Zeit für eine Pause"}</small></div>
+            </div>` : ""}
           <p class="ai-tip" id="ai-tip" hidden></p>
         </div>
         ${model.ready ? `<button class="button ${soon ? "button-primary" : "button-secondary"} small ai-home-cta" id="risk-plan" type="button">${soon ? "Jetzt vorsorgen" : "Mein Plan"}</button>` : ""}
@@ -256,7 +268,7 @@ export async function render(root, { api, showToast, refresh, goTo }) {
   api("/api/insights").then(({ tips = [], community = {} }) => {
     const tip = root.querySelector("#ai-tip");
     if (!tip || !tips.length) return;
-    tip.textContent = `💡 ${tips[new Date().getHours() % tips.length]}${community.crisis_chats_now ? ` · Gerade unterstützen sich ${community.crisis_chats_now} Menschen im Krisen-Chat.` : ""}`;
+    tip.innerHTML = `<span>💡</span><span>${escapeHtml(tips[new Date().getHours() % tips.length])}${community.crisis_chats_now ? ` Gerade unterstützen sich ${community.crisis_chats_now} Menschen im Krisen-Chat.` : ""}</span>`;
     tip.hidden = false;
   }).catch(() => {});
   root.querySelector("#risk-plan")?.addEventListener("click", () => {
@@ -367,12 +379,15 @@ export async function render(root, { api, showToast, refresh, goTo }) {
         <span class="faith-home-icon">${religions.map((id) => (id === "islam" ? "☪" : "✝")).join("")}</span>
         <div>
           ${next ? `<strong>${escapeHtml(next.label)} um ${formatClock(next.at, config.timeZone)} <small style="display:inline">· in ${minutes >= 60 ? `${Math.floor(minutes / 60)} Std. ${minutes % 60} Min.` : `${minutes} Min.`}</small></strong>` : ""}
-          ${verse ? `<small>„${escapeHtml(verse.text.length > 140 ? `${verse.text.slice(0, 137)}…` : verse.text)}“ – ${escapeHtml(verse.ref)}</small>` : ""}
+          ${verse ? `<p class="faith-home-verse">„<span data-home-verse>${escapeHtml(verse.text)}</span>“ <small>– ${escapeHtml(verse.ref)}</small></p>` : ""}
         </div>
         <button class="button button-secondary small" data-go-faith type="button">Glaube öffnen</button>`;
       card.querySelector("[data-go-faith]").addEventListener("click", () => goTo("faith"));
+      if (exact) card.querySelector("[data-home-verse]").textContent = exact;
       card.hidden = false;
     };
+    let exact = "";
+    if (verse) loadVerse(verse).then((result) => { exact = result.text; draw(); }).catch(() => {});
     draw();
     if (config) faithTimer = setInterval(draw, 30000);
   }).catch(() => {});

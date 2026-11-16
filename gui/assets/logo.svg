@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#16735f"/>
+      <stop offset="1" stop-color="#0b4a52"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="58%" r="50%">
+      <stop offset="0" stop-color="#fff2c6" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#fff2c6" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="core" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#ffb347"/>
+      <stop offset="1" stop-color="#fff3cf"/>
+    </linearGradient>
+    <linearGradient id="inner" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#ff8a7a"/>
+      <stop offset="1" stop-color="#ffd9c9"/>
+    </linearGradient>
+    <linearGradient id="outer" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#f06b8a"/>
+      <stop offset="1" stop-color="#ffc2cf"/>
+    </linearGradient>
+    <linearGradient id="leaf" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9ff0c2"/>
+      <stop offset="1" stop-color="#3fbf86"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="58" fill="url(#bg)"/>
+  <circle cx="128" cy="140" r="104" fill="url(#glow)"/>
+  <!-- outer petals -->
+  <path d="M128 176 C 92 182 52 166 34 134 C 72 124 108 142 128 176 Z" fill="url(#outer)"/>
+  <path d="M128 176 C 164 182 204 166 222 134 C 184 124 148 142 128 176 Z" fill="url(#outer)"/>
+  <!-- inner petals -->
+  <path d="M128 176 C 92 166 66 128 70 88 C 100 100 124 134 128 176 Z" fill="url(#inner)"/>
+  <path d="M128 176 C 164 166 190 128 186 88 C 156 100 132 134 128 176 Z" fill="url(#inner)"/>
+  <!-- centre petal -->
+  <path d="M128 50 C 154 86 158 136 128 178 C 98 136 102 86 128 50 Z" fill="url(#core)"/>
+  <!-- leaves -->
+  <path d="M54 194 C 92 214 164 214 202 194 C 168 204 88 204 54 194 Z" fill="url(#leaf)"/>
+  <path d="M84 206 Q 128 226 172 206" stroke="#bff7d9" stroke-width="5" stroke-linecap="round" fill="none" opacity="0.8"/>
+</svg>

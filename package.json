@@ -3,12 +3,12 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Reşo – Begleiter auf dem Weg aus der Sucht (Desktop-App)",
+  "description": "Life – made by Reşo. Begleiter auf dem Weg aus der Sucht.",
   "main": "electron/main.cjs",
   "scripts": {
     "start": "electron .",
-    "check": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/core.cjs && node --check electron/store.cjs && node --check electron/google.cjs && node --check electron/monitor.cjs && node --check gui/app.js && node --check gui/api.js && node --check gui/pages/home.js && node --check gui/pages/timer.js && node --check gui/pages/stats.js && node --check gui/pages/settings.js && node --check gui/pages/community.js && node --check gui/prefs.js && node --check gui/ui.js && node --check gui/sos.js && node --check gui/recovery.js && node --check gui/insights.js && node --check gui/flows.js && node --check gui/palette.js && node --check gui/account.js && node --check gui/companion.js && node --check gui/progress.js && node --check gui/sidebar.js && node --check gui/wave.js && node --check gui/calm.js && node --check gui/help.js && node --check gui/pause.js && node --check gui/intervention.js && node --check gui/pages/crisis.js && node --check gui/pages/faith.js && node --check gui/faith/calc.js && node --check gui/faith/data.js && node --check gui/faith/state.js && node --check gui/faith/ui.js && node --check gui/faith/reader.js && node --check gui/faith/reminders.js && node --check electron/seal.cjs",
-    "test": "node --test tests/core.test.mjs && node tests/test_insights.mjs && node tests/test_faith.mjs",
+    "check": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/core.cjs && node --check electron/store.cjs && node --check electron/google.cjs && node --check electron/monitor.cjs && node --check gui/app.js && node --check gui/api.js && node --check gui/pages/home.js && node --check gui/pages/timer.js && node --check gui/pages/stats.js && node --check gui/pages/settings.js && node --check gui/pages/community.js && node --check gui/prefs.js && node --check gui/ui.js && node --check gui/sos.js && node --check gui/recovery.js && node --check gui/insights.js && node --check gui/flows.js && node --check gui/palette.js && node --check gui/account.js && node --check gui/companion.js && node --check gui/progress.js && node --check gui/sidebar.js && node --check gui/wave.js && node --check gui/calm.js && node --check gui/help.js && node --check gui/pause.js && node --check gui/intervention.js && node --check gui/pages/crisis.js && node --check gui/pages/faith.js && node --check gui/faith/calc.js && node --check gui/faith/data.js && node --check gui/faith/state.js && node --check gui/faith/ui.js && node --check gui/faith/reader.js && node --check gui/faith/reminders.js && node --check gui/faith/content.js && node --check gui/faith/wege.js && node --check gui/faith/learn.js && node --check electron/seal.cjs && node --check electron/matcher.cjs",
+    "test": "node --test tests/core.test.mjs && node tests/test_insights.mjs && node tests/test_faith.mjs && node tests/test_triggers.mjs",
     "build": "electron-builder"
   },
   "devDependencies": {
@@ -25,7 +25,7 @@
   },
   "build": {
     "appId": "de.reso.desktop",
-    "productName": "Reşo",
+    "productName": "Life",
     "files": [
       "electron/**/*",
       "gui/**/*",
@@ -40,7 +40,8 @@
       "allowToChangeInstallationDirectory": true,
       "installerIcon": "electron/assets/icon.ico",
       "uninstallerIcon": "electron/assets/icon.ico",
-      "shortcutName": "Reşo"
+      "shortcutName": "Life",
+      "uninstallDisplayName": "Life – made by Reşo"
     },
     "asarUnpack": [
       "node_modules/uiohook-napi/**"

@@ -103,7 +103,7 @@ class ForumReactionDB(Base):
 
 
 Base.metadata.create_all(bind=engine)
-app = FastAPI(title="Reşo Cloud & Community API")
+app = FastAPI(title="Life Cloud & Community API")
 
 MAX_FORUM_MEDIA_SIZE = 500 * 1024
 MAX_FORUM_REQUEST_SIZE = 700 * 1024

@@ -304,10 +304,10 @@ export async function render(root, { api, goTo, showToast, refresh }) {
             <div>${riskClock(hourProfile(model), new Date().getHours())}</div>
             <div class="ai-copy">
               <span class="ai-badge">✦ Lokale KI · Frühwarnsystem</span>
-              <h3>${model.ready ? "So sieht dein heutiger Tag aus" : "Reşo lernt dich noch kennen"}</h3>
+              <h3>${model.ready ? "So sieht dein heutiger Tag aus" : "Life lernt dich noch kennen"}</h3>
               <p class="muted small">${model.ready
-                ? `Rot heißt: Zu dieser Zeit wird es für dich oft schwer. Reşo meldet sich ${prefs.aiLeadMinutes} Min. vorher.`
-                : "Nach ein paar erfassten Momenten erkennt Reşo deine Muster."}</p>
+                ? `Rot heißt: Zu dieser Zeit wird es für dich oft schwer. Life meldet sich ${prefs.aiLeadMinutes} Min. vorher.`
+                : "Nach ein paar erfassten Momenten erkennt Life deine Muster."}</p>
               ${windows.length ? `<div class="window-chips">${windows.map((window) => `<span class="window-chip" style="--tone:${riskLabel(window.level).color}">${escapeHtml(window.label)}</span>`).join("")}</div>` : ""}
             </div>
           </div>

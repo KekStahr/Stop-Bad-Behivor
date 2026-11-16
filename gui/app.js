@@ -15,7 +15,7 @@ import { render as renderTimer } from "./pages/timer.js";
 import { render as renderStats } from "./pages/stats.js";
 import { render as renderSettings } from "./pages/settings.js";
 import { render as renderCommunity, setPendingRoom, openCrisisTab } from "./pages/community.js";
-import { render as renderFaith, openFaithReader } from "./pages/faith.js";
+import { render as renderFaith, openFaithReader, openFaithPrayer } from "./pages/faith.js";
 import { startFaithReminders } from "./faith/reminders.js";
 import { loadFaith, faith, onFaithChange } from "./faith/state.js";
 
@@ -66,7 +66,7 @@ async function navigate(page, { keepScroll = false } = {}) {
     else button.removeAttribute("aria-current");
   });
   moveIndicator();
-  document.title = `${pages[page].title} · Reşo`;
+  document.title = `${pages[page].title} · Life`;
 
   const fresh = document.createElement("div");
   fresh.className = `page-inner page-${page}`;
@@ -130,6 +130,9 @@ const commands = [
 ];
 
 document.querySelector("#sos-button").addEventListener("click", () => openSos({ goTo: navigate }));
+document.querySelector("#donate-button").addEventListener("click", () => {
+  api("/api/app/open-external", { method: "POST", body: { url: "https://streamelements.com/rehscho/tip" } }).catch((error) => showToast(error.message, true));
+});
 document.querySelector("#profile-button").addEventListener("click", () => openAccount(context));
 window.addEventListener("reso:account", () => {
   invalidateCompanion();
@@ -142,6 +145,7 @@ window.addEventListener("reso:open-room", (event) => {
   setPendingRoom(event.detail);
   navigate("community");
 });
+window.addEventListener("reso:faith-pray", (event) => { openFaithPrayer(event.detail).catch(() => {}); });
 window.addEventListener("reso:open-reader", (event) => {
   openFaithReader(event.detail);
   navigate("faith");
@@ -157,7 +161,7 @@ quitBanner.className = "quit-banner";
 quitBanner.hidden = true;
 document.querySelector("#main").prepend(quitBanner);
 let quitTicker;
-quitBanner.innerHTML = `<span>⏳ Reşo beendet sich in <strong id="quit-banner-left"></strong>. Bis dahin bin ich noch für dich da.</span>
+quitBanner.innerHTML = `<span>⏳ Life beendet sich in <strong id="quit-banner-left"></strong>. Bis dahin bin ich noch für dich da.</span>
   <button class="button button-light small" type="button">Abbrechen – ich bleibe</button>`;
 quitBanner.querySelector("button").addEventListener("click", async () => {
   const state = await api("/api/app/quit", { method: "POST", body: { action: "cancel" } }).catch(() => null);
@@ -175,11 +179,14 @@ function showQuitState(state) {
   quitTicker = setInterval(tick, 1000);
 }
 window.addEventListener("reso:quit-state", (event) => showQuitState(event.detail));
+window.addEventListener("reso:quit-state", (event) => {
+  if (event.detail && "energySaver" in event.detail) document.documentElement.dataset.energy = event.detail.energySaver ? "on" : "off";
+});
 onDesktopEvent(({ type, payload }) => {
   if (type === "trigger") openIntervention(payload.word, context); else if (type === "sos") openSos({ goTo: navigate });
   else if (type === "navigate") navigate(payload.page);
   else if (type === "quit-changed") window.dispatchEvent(new CustomEvent("reso:quit-state", { detail: payload }));
-  else if (type === "quit-blocked") showToast("Reşo beendest du über das Symbol unten rechts (Rechtsklick → Beenden, 30 Min. Wartezeit).");
+  else if (type === "quit-blocked") showToast("Life beendest du über das Symbol unten rechts (Rechtsklick → Beenden, 30 Min. Wartezeit).");
   else if (type === "timer-finished") {
     showToast(`Fokus geschafft: ${payload.minutes} Minuten. Stark!`);
     if (activePage === "timer" || activePage === "home") navigate(activePage, { keepScroll: true });

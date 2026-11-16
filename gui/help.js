@@ -45,7 +45,7 @@ export function requestHelp() {
 function showOffer(help, { showToast }) {
   shownOffers.add(help.id);
   chime("message");
-  notify("Reşo · Jemand braucht deine Hilfe", `Thema: ${help.topic}. Tippe, um zu antworten.`);
+  notify("Life · Jemand braucht deine Hilfe", `Thema: ${help.topic}. Tippe, um anzunehmen oder abzulehnen.`);
   api("/api/app/show", { method: "POST", body: {} }).catch(() => {});
   let seconds = help.seconds_left ?? 45;
   let answered = false;
@@ -56,36 +56,85 @@ function showOffer(help, { showToast }) {
       if (!answered) showToast("Okay – die Anfrage geht gleich an jemand anderen.");
     },
     body: `
-      <div class="offer">
+      <div class="offer" id="offer-body">
         <div class="offer-pulse">🤝</div>
         <p class="offer-topic">Sucht: <strong>${escapeHtml(help.topic)}</strong></p>
         ${help.note ? `<blockquote class="offer-note">„${escapeHtml(help.note)}“</blockquote>` : ""}
-        <p class="muted small">Du bleibst anonym. Hör zu, sei freundlich – du musst keine Lösung haben. Bei akuter Gefahr: 112.</p>
+        <p class="muted small">Ihr bleibt beide anonym. Hör zu, sei freundlich – du musst keine Lösung haben. Bei akuter Gefahr: 112.</p>
         <div class="offer-timer"><span id="offer-bar" style="--w:100%"></span></div>
-        <div class="offer-actions">
-          <button class="button button-primary button-large" data-decision="accept" type="button">Dieser Person helfen</button>
-          <button class="button button-secondary" data-decision="forward" type="button">An eine andere Vertrauensperson weitersenden</button>
+        <div class="offer-choice">
+          <button class="button button-primary button-large" data-decision="accept" type="button">✓ Annehmen</button>
+          <button class="button button-secondary button-large" data-decision="decline" type="button">✕ Ablehnen</button>
         </div>
-        <small class="muted">Beim Weitersenden wirst du 1 Stunde lang nicht angefragt.</small>
+        <small class="muted">Beim Ablehnen geht die Anfrage sofort an eine andere Vertrauensperson.</small>
       </div>`,
   });
   const total = seconds;
   const bar = dialog.querySelector("#offer-bar");
   const countdown = setInterval(() => {
     seconds -= 1;
-    bar.style.setProperty("--w", `${Math.max(0, (seconds / total) * 100)}%`);
-    if (seconds <= 0) close();
+    bar?.style.setProperty("--w", `${Math.max(0, (seconds / total) * 100)}%`);
+    if (seconds <= 0 && !answered) close();
   }, 1000);
+
+  const respond = (decision, pauseMinutes = 60) => api("/api/community/social/help", {
+    method: "POST",
+    body: { action: "respond", id: help.id, decision, pause_minutes: pauseMinutes, ...socialProfile() },
+  });
+
+  // after declining: how long should Life leave this person alone?
+  const askPause = () => {
+    const minutesToMidnight = () => {
+      const now = new Date();
+      return Math.max(1, Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1) - now) / 60000));
+    };
+    dialog.querySelector("#offer-body").innerHTML = `
+      <div class="offer-pulse">🌙</div>
+      <p class="offer-topic"><strong>Danke für deine Ehrlichkeit.</strong></p>
+      <p class="muted small">Die Person wird gerade an jemand anderen weitergegeben. Wie lange möchtest du keine Anfragen bekommen?</p>
+      <div class="pause-grid">
+        <button type="button" class="choice" data-pause="5">5 Minuten</button>
+        <button type="button" class="choice" data-pause="15">15 Minuten</button>
+        <button type="button" class="choice" data-pause="60">1 Stunde</button>
+        <button type="button" class="choice" data-pause="today">Heute nicht mehr</button>
+      </div>
+      <form class="pause-own" id="pause-own">
+        <input id="pause-minutes" type="number" min="1" max="10080" placeholder="Eigene Zeit" aria-label="Eigene Pause in Minuten">
+        <select id="pause-unit" aria-label="Einheit"><option value="1">Minuten</option><option value="60">Stunden</option><option value="1440">Tage</option></select>
+        <button class="button button-primary" type="submit">Übernehmen</button>
+      </form>`;
+    const save = async (minutes) => {
+      try {
+        await api("/api/community/social/help", { method: "POST", body: { action: "pause", pause_minutes: minutes, ...socialProfile() } });
+        close();
+        showToast(minutes >= 1440 ? "Alles klar – du hast Ruhe. 💙" : `Alles klar – ${minutes >= 60 ? `${Math.round(minutes / 60)} Std.` : `${minutes} Min.`} keine Anfragen.`);
+      } catch (error) {
+        showToast(error.message, true);
+      }
+    };
+    dialog.querySelectorAll("[data-pause]").forEach((button) => button.addEventListener("click", () => save(button.dataset.pause === "today" ? minutesToMidnight() : Number(button.dataset.pause))));
+    dialog.querySelector("#pause-own").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const value = Number(dialog.querySelector("#pause-minutes").value);
+      if (!(value > 0)) return showToast("Bitte gib eine Zeit ein.", true);
+      save(Math.min(10080, Math.round(value * Number(dialog.querySelector("#pause-unit").value))));
+      return undefined;
+    });
+  };
+
   dialog.querySelectorAll("[data-decision]").forEach((button) => button.addEventListener("click", async () => {
     answered = true;
+    clearInterval(countdown);
     try {
-      const result = await api("/api/community/social/help", {
-        method: "POST",
-        body: { action: "respond", id: help.id, decision: button.dataset.decision, ...socialProfile() },
-      });
-      close();
-      if (result.help.status === "accepted") openCrisis({ id: result.help.id });
-      else showToast("Danke. Wir fragen jemand anderen – du wirst 1 Stunde nicht angefragt.");
+      if (button.dataset.decision === "accept") {
+        const result = await respond("accept");
+        close();
+        if (result.help.status === "accepted") openCrisis({ id: result.help.id });
+        else showToast("Diese Anfrage ist leider schon vergeben.");
+      } else {
+        await respond("forward", 60); // pass it on right away – the pause can still be changed below
+        askPause();
+      }
     } catch (error) {
       close();
       showToast(error.message, true);
@@ -93,7 +142,7 @@ function showOffer(help, { showToast }) {
   }));
 }
 
-// Polls in the background so helpers stay reachable while Reşo sits in the tray.
+// Polls in the background so helpers stay reachable while Life sits in the tray.
 export function startHelpWatcher(context) {
   const tick = async () => {
     try {

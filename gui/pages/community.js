@@ -8,6 +8,7 @@ import { renderCrisis, setPendingCrisis } from "./crisis.js";
 // Remembered between page switches.
 let view = "chats";
 let room = "";
+let listScroll = 0;
 
 // Lets other parts of the app open a specific chat.
 export function setPendingRoom(nextRoom) {
@@ -408,9 +409,19 @@ export async function render(root, { api, showToast, goTo }) {
     });
   }
 
+  // Online in a group, without counting yourself (it looked like an unread badge).
+  function othersOnline(channelId) {
+    const count = social?.online_by_channel?.[channelId] || 0;
+    return Math.max(0, count - (socialProfile().addiction === channelId ? 1 : 0));
+  }
+
   function renderRoomList() {
     const list = container.querySelector("#room-list");
     if (!list || !social) return;
+    if (!list.dataset.bound) {
+      list.dataset.bound = "1";
+      list.addEventListener("scroll", () => { listScroll = list.scrollTop; }, { passive: true });
+    }
     const signature = JSON.stringify([filter, room, social.channels, social.faith_channels, social.friends, lastRead, social.help, social.helpers_online]);
     if (list.dataset.signature === signature) return;
     list.dataset.signature = signature;
@@ -430,7 +441,7 @@ export async function render(root, { api, showToast, goTo }) {
         <button class="room ${room === `c:${channel.id}` ? "is-active" : ""}" data-room="c:${channel.id}" type="button">
           <span class="room-emoji">${channel.emoji}</span>
           <span class="room-name">${escapeHtml(channel.name)}</span>
-          ${social.online_by_channel?.[channel.id] ? `<small class="room-online">${social.online_by_channel[channel.id]}</small>` : ""}
+          ${othersOnline(channel.id) ? `<small class="room-online" title="${othersOnline(channel.id)} andere gerade online"><i></i>${othersOnline(channel.id)}</small>` : ""}
         </button>`).join("") || '<p class="list-empty">Keine Treffer</p>'}
       <div class="list-label">Direktnachrichten</div>
       ${friends.map((friend) => `
@@ -439,6 +450,7 @@ export async function render(root, { api, showToast, goTo }) {
           <span class="room-name">${escapeHtml(friend.name)}</span>
           ${unreadFor(friend) ? '<i class="unread-dot" aria-label="Ungelesen"></i>' : ""}
         </button>`).join("") || `<p class="list-empty">Noch keine Freunde. <button class="link-button" data-view-link="friends" type="button">Freunde hinzufügen</button></p>`}`;
+    list.scrollTop = listScroll; // stay where the user scrolled to
     list.querySelectorAll("[data-room]").forEach((button) => button.addEventListener("click", () => openRoom(button.dataset.room)));
     list.querySelector("#help-cta").addEventListener("click", () => {
       view = "crisis";
@@ -622,43 +634,84 @@ export async function render(root, { api, showToast, goTo }) {
       return;
     }
     if (!alive || view !== "challenges") return;
+    const ui = { category: "all", query: "", sort: "popular", limit: 24 };
+    const card = (challenge, extra = "") => `
+      <article class="card challenge ${challenge.joined ? "is-joined" : ""} ${extra}">
+        <div class="challenge-head"><span class="challenge-emoji">${challenge.emoji}</span>
+          <div><strong>${escapeHtml(challenge.title)}</strong><small>${challenge.days} ${challenge.days === 1 ? "Tag" : "Tage"} · ${challenge.participants} dabei · ${challenge.done_today_total} heute geschafft</small></div></div>
+        <p class="muted small">${escapeHtml(challenge.text)}</p>
+        ${challenge.joined ? `
+          <div class="challenge-dots ${challenge.days > 60 ? "is-long" : ""}">${challenge.days > 60
+            ? `<span class="challenge-bar"><i style="--w:${Math.min(100, (challenge.my_days / challenge.days) * 100)}%"></i></span><small>${challenge.my_days} / ${challenge.days}</small>`
+            : Array.from({ length: challenge.days }, (_, index) => `<i class="${index < challenge.my_days ? "is-done" : ""}"></i>`).join("")}</div>
+          <div class="button-row">
+            <button class="button ${challenge.done_today ? "button-secondary" : "button-primary"} small" data-challenge="checkin" data-id="${challenge.id}" type="button" ${challenge.done_today ? "disabled" : ""}>${challenge.done_today ? "✓ Heute geschafft" : "Heute geschafft"}</button>
+            <button class="button button-plain small" data-challenge="leave" data-id="${challenge.id}" type="button">Verlassen</button>
+          </div>` : `<button class="button button-tinted small" data-challenge="join" data-id="${challenge.id}" type="button">Mitmachen</button>`}
+      </article>`;
     const draw = () => {
+      const day = Math.floor(Date.now() / 86400000);
+      const daily = data.challenges[(day * 37) % data.challenges.length];
+      const mine = data.challenges.filter((challenge) => challenge.joined);
+      const query = ui.query.trim().toLowerCase();
+      let list = data.challenges.filter((challenge) => !challenge.joined
+        && (ui.category === "all" || challenge.category === ui.category)
+        && (!query || `${challenge.title} ${challenge.text}`.toLowerCase().includes(query)));
+      // ties are shuffled once per day so the list feels fresh
+      const mix = (text) => [...`${text}${day}`].reduce((hash, character) => (hash * 31 + character.charCodeAt(0)) % 100003, 7);
+      list = list.slice().sort(ui.sort === "short" ? (a, b) => a.days - b.days : ui.sort === "long" ? (a, b) => b.days - a.days : (a, b) => b.participants - a.participants || mix(a.id) - mix(b.id));
+      const categories = data.categories || [];
       container.innerHTML = `
         <section class="challenge-hero">
           <div><span class="eyebrow">Gemeinsam schaffen</span><h2>Challenges</h2>
-            <p>Mach mit, hake jeden Tag ab und sieh, wer heute mit dir durchhält. Niemand muss es allein schaffen.</p></div>
+            <p>${data.challenges.length} Challenges in ${categories.length} Bereichen. Mach mit, hake jeden Tag ab und sieh, wer heute mit dir durchhält.</p></div>
           <div class="challenge-total"><strong>${data.challenges.reduce((sum, item) => sum + item.participants, 0)}</strong><small>machen mit</small></div>
         </section>
-        <div class="challenge-grid">
-          ${data.challenges.map((challenge) => `
-            <article class="card challenge ${challenge.joined ? "is-joined" : ""}">
-              <div class="challenge-head"><span class="challenge-emoji">${challenge.emoji}</span>
-                <div><strong>${escapeHtml(challenge.title)}</strong><small>${challenge.days} Tage · ${challenge.participants} dabei · ${challenge.done_today_total} heute geschafft</small></div></div>
-              <p class="muted small">${escapeHtml(challenge.text)}</p>
-              ${challenge.joined ? `
-                <div class="challenge-dots">${Array.from({ length: challenge.days }, (_, index) => `<i class="${index < challenge.my_days ? "is-done" : ""}"></i>`).join("")}</div>
-                <div class="button-row">
-                  <button class="button ${challenge.done_today ? "button-secondary" : "button-primary"} small" data-challenge="checkin" data-id="${challenge.id}" type="button" ${challenge.done_today ? "disabled" : ""}>${challenge.done_today ? "✓ Heute geschafft" : "Heute geschafft"}</button>
-                  <button class="button button-plain small" data-challenge="leave" data-id="${challenge.id}" type="button">Verlassen</button>
-                </div>` : `<button class="button button-tinted small" data-challenge="join" data-id="${challenge.id}" type="button">Mitmachen</button>`}
-            </article>`).join("")}
+        ${!daily.joined ? `<section class="challenge-daily"><span class="eyebrow">⭐ Challenge des Tages</span>${card(daily, "is-daily")}</section>` : ""}
+        ${mine.length ? `<h3 class="challenge-section">Deine Challenges (${mine.length})</h3><div class="challenge-grid">${mine.map((challenge) => card(challenge)).join("")}</div>` : ""}
+        <h3 class="challenge-section">Entdecken</h3>
+        <div class="challenge-tools">
+          <label class="search-field"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="challenge-search" type="search" placeholder="Challenge suchen" value="${escapeHtml(ui.query)}"></label>
+          <select id="challenge-sort" aria-label="Sortieren"><option value="popular" ${ui.sort === "popular" ? "selected" : ""}>Empfohlen</option><option value="short" ${ui.sort === "short" ? "selected" : ""}>Kürzeste zuerst</option><option value="long" ${ui.sort === "long" ? "selected" : ""}>Längste zuerst</option></select>
         </div>
+        <div class="chip-row challenge-cats">
+          <button type="button" class="chip ${ui.category === "all" ? "is-selected" : ""}" data-cat="all">Alle</button>
+          ${categories.map((category) => `<button type="button" class="chip ${ui.category === category.id ? "is-selected" : ""}" data-cat="${category.id}">${category.emoji} ${escapeHtml(category.name)}</button>`).join("")}
+        </div>
+        <div class="challenge-grid">${list.slice(0, ui.limit).map((challenge) => card(challenge)).join("") || '<p class="muted">Keine Challenge gefunden.</p>'}</div>
+        ${list.length > ui.limit ? `<div class="button-row centered"><button class="button button-secondary" id="challenge-more" type="button">Mehr anzeigen (${list.length - ui.limit} weitere)</button></div>` : ""}
         <section class="card">
           <div class="card-header"><div><span class="eyebrow">Live</span><h3>Wer gerade durchhält</h3></div></div>
           <div class="challenge-feed">${data.feed.map((item) => `
             <div class="feed-row"><span>${item.emoji}</span><span><strong>${escapeHtml(item.mine ? "Du" : item.name)}</strong> ${item.mine ? "hast" : "hat"} Tag ${item.day} von „${escapeHtml(item.challenge)}“ geschafft</span>
               <time>${new Date(item.at * 1000).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}</time></div>`).join("") || '<p class="muted small">Sei die erste Person heute. 🌱</p>'}</div>
         </section>`;
+      const search = container.querySelector("#challenge-search");
+      search.addEventListener("input", () => {
+        ui.query = search.value;
+        ui.limit = 24;
+        const at = search.selectionStart;
+        draw();
+        const next = container.querySelector("#challenge-search");
+        next.focus();
+        next.setSelectionRange(at, at);
+      });
+      container.querySelector("#challenge-sort").addEventListener("change", (event) => { ui.sort = event.target.value; draw(); });
+      container.querySelectorAll("[data-cat]").forEach((button) => button.addEventListener("click", () => { ui.category = button.dataset.cat; ui.limit = 24; draw(); }));
+      container.querySelector("#challenge-more")?.addEventListener("click", () => { ui.limit += 48; draw(); });
       container.querySelectorAll("[data-challenge]").forEach((button) => button.addEventListener("click", async () => {
         button.disabled = true;
         try {
-          data = await api("/api/community/social/challenges", { method: "POST", body: { action: button.dataset.challenge, id: button.dataset.id, ...socialProfile() } });
+          const fresh = await api("/api/community/social/challenges", { method: "POST", body: { action: button.dataset.challenge, id: button.dataset.id, ...socialProfile() } });
+          data = { ...fresh, categories: fresh.categories || data.categories };
           if (button.dataset.challenge === "checkin") {
             const { confetti } = await import("../flows.js");
             confetti();
             showToast("Abgehakt! Die anderen sehen, dass du dabei bist. 💪");
-          }
+          } else if (button.dataset.challenge === "join") showToast("Du bist dabei! Viel Kraft. 🌱");
+          const scroll = document.querySelector("#main").scrollTop;
           draw();
+          document.querySelector("#main").scrollTop = scroll;
         } catch (error) {
           button.disabled = false;
           showToast(error.message, true);

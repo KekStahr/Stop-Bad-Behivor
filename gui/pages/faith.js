@@ -4,9 +4,11 @@ import { escapeHtml } from "../api.js";
 import { confirmSheet, openSheet } from "../ui.js";
 import { RELIGIONS, CHRISTIAN_TRADITIONS, ISLAM_TRADITIONS, PRAYERS, MOMENTS, TRACKER, JOURNAL_KINDS, SCENES, verseOfDay, randomVerse, VERSES } from "../faith/data.js";
 import { faith, loadFaith, saveFaith, activeReligions, prayerConfig, hashPin, todayKey, onFaithChange } from "../faith/state.js";
-import { prayerTimes, nextPrayer, ymdIn, formatClock, hijri, holidays, churchSeason, ramadanInfo, lentInfo, PRAYERS as PRAYER_TIMES, addDays } from "../faith/calc.js";
+import { prayerTimes, nextPrayer, ymdIn, formatClock, hijri, holidays, churchSeason, ramadanInfo, lentInfo, qibla, PRAYERS as PRAYER_TIMES, addDays } from "../faith/calc.js";
 import { badge, verseCard, bindVerseCard, openLocationSheet, openAdjustSheet, openCounter, openStillness, qiblaText, methodLabel } from "../faith/ui.js";
 import { renderReader } from "../faith/reader.js";
+import { renderWege, wordOfDay } from "../faith/wege.js";
+import { openLearn } from "../faith/learn.js";
 
 let tab = "today";
 let focus = "all"; // all | christian | islam
@@ -19,7 +21,7 @@ export function openFaithReader(target) {
   tab = "read";
 }
 
-const TABS = [["today", "Heute"], ["read", "Lesen"], ["prayer", "Gebet"], ["calendar", "Kalender"], ["journal", "Tagebuch"]];
+const TABS = [["today", "Heute"], ["wege", "Wege"], ["read", "Lesen"], ["prayer", "Gebet"], ["calendar", "Kalender"], ["journal", "Tagebuch"]];
 
 export async function render(root, context) {
   const { showToast } = context;
@@ -33,6 +35,13 @@ export async function render(root, context) {
   if (current.enabled && current.pin && !unlocked) return renderLock(root, context);
   if (!current.enabled || (!current.christian && !current.islam)) return renderSetup(root, context);
   return renderSpace(root, context);
+}
+
+// Opens the prayer for a moment (e.g. from the Stopp sheet) without visiting the page.
+export async function openFaithPrayer(moment) {
+  await loadFaith();
+  const religions = activeReligions();
+  if (religions.length) openPrayerSheet(religions, moment, { openRead: (target) => { window.dispatchEvent(new CustomEvent("reso:open-reader", { detail: target })); } });
 }
 
 // ---- lock ------------------------------------------------------------------------------------
@@ -148,8 +157,15 @@ function renderSpace(root, context) {
     cleanupTab = undefined;
     clearInterval(ticker);
     root.querySelectorAll("[data-tab]").forEach((button) => button.setAttribute("aria-selected", String(button.dataset.tab === tab)));
-    const ctx = { ...context, religions: religions(), view, setTicker: (fn) => { ticker = setInterval(fn, 1000); }, openRead: (target) => { readTarget = target; tab = "read"; show(); } };
+    const ctx = {
+      ...context, religions: religions(), view,
+      setTicker: (fn) => { ticker = setInterval(fn, 1000); },
+      openRead: (target) => { readTarget = target; tab = "read"; show(); },
+      openPrayer: (list, moment) => openPrayerSheet(list, moment, { openRead: ctx.openRead }),
+      openTab: (id) => { tab = id; show(); },
+    };
     if (tab === "today") renderToday(ctx);
+    else if (tab === "wege") renderWege(ctx);
     else if (tab === "read") {
       cleanupTab = renderReader(view, { showToast, religions: religions(), target: readTarget });
       readTarget = null;
@@ -189,7 +205,7 @@ function renderToday(ctx) {
   const lent = religions.includes("christian") && current.fasting ? lentInfo(today, current.christianTradition) : null;
   const upcoming = holidays({ ...current, christian: religions.includes("christian"), islam: religions.includes("islam") }, today, 120).slice(0, 3);
   const log = current.trackerLog[todayKey()] || {};
-  const trackerItems = religions.flatMap((religion) => TRACKER[religion].filter((item) => !item.traditions || item.traditions.includes(religion === "christian" ? current.christianTradition : current.islamTradition)).map((item) => ({ ...item, religion })));
+  const trackerItems = religions.flatMap((religion) => TRACKER[religion].filter((item) => (!item.extra || current.trackerExtras) && (!item.traditions || item.traditions.includes(religion === "christian" ? current.christianTradition : current.islamTradition))).map((item) => ({ ...item, religion })));
 
   view.innerHTML = `
     <section class="verse-day ${verses.length > 1 ? "is-pair" : ""}">
@@ -205,7 +221,7 @@ function renderToday(ctx) {
             <div class="next-prayer"><small>Nächstes Gebet</small><strong id="np-name">–</strong><span class="np-time" id="np-time"></span><span class="np-left" id="np-left"></span></div>
             <div class="prayer-strip" id="prayer-strip"></div>
             <small class="muted">📍 ${escapeHtml(current.location.name)} · Qibla ${qiblaText(current.location)}</small>`
-            : `<p class="muted">Lege deinen Standort fest, damit Reşo dich an die Gebetszeiten erinnern kann.</p><button class="button button-primary" id="set-place" type="button">Standort festlegen</button>`}
+            : `<p class="muted">Lege deinen Standort fest, damit Life dich an die Gebetszeiten erinnern kann.</p><button class="button button-primary" id="set-place" type="button">Standort festlegen</button>`}
         </section>` : ""}
       ${religions.includes("christian") ? `
         <section class="card faith-card church-card" style="--season:${churchSeason(today, current.christianTradition).color}">
@@ -234,6 +250,17 @@ function renderToday(ctx) {
           <div class="tracker-today">${trackerItems.map((item) => `
             <button type="button" class="tracker-item ${log[item.id] ? "is-done" : ""}" data-track="${item.id}"><span>${log[item.id] ? "✓" : RELIGIONS[item.religion].symbol}</span>${escapeHtml(item.label)}</button>`).join("")}</div>
         </section>` : ""}
+      ${religions.map((religion) => { const word = wordOfDay(religion); return `
+        <section class="card faith-card word-card">
+          <header>${badge(religion)}<span class="eyebrow">${escapeHtml(word.label)}</span></header>
+          <blockquote>„${escapeHtml(word.text)}“</blockquote>
+          <small class="muted">${escapeHtml(word.source)}</small>
+        </section>`; }).join("")}
+      <section class="card faith-card wege-teaser">
+        <header><span class="eyebrow">Wege</span></header>
+        <p>Gefühls-Kompass, 12 Schritte, Lesepläne, Namen Gottes, Gutes tun und vieles mehr.</p>
+        <button class="button button-tinted" data-open-wege type="button">Alle Wege entdecken →</button>
+      </section>
       <section class="card faith-card">
         <header><span class="eyebrow">Demnächst</span><button class="link-button" data-go-calendar type="button">Kalender →</button></header>
         ${upcoming.length ? upcoming.map((event) => `<div class="holiday-row"><span class="holiday-icon">${event.icon}</span><span><strong>${escapeHtml(event.title)}</strong><small>${daysUntil(event.date)}</small></span>${badge(event.religion)}</div>`).join("") : '<p class="muted small">In den nächsten Wochen steht kein Feiertag an.</p>'}
@@ -259,8 +286,9 @@ function renderToday(ctx) {
   view.querySelector("[data-go-calendar]")?.addEventListener("click", () => view.closest(".faith-page").querySelector('[data-tab="calendar"]').click());
   view.querySelector("[data-prayers]")?.addEventListener("click", () => view.closest(".faith-page").querySelector('[data-tab="prayer"]').click());
   view.querySelector("#still").addEventListener("click", () => openStillness(religions));
+  view.querySelector("[data-open-wege]")?.addEventListener("click", () => ctx.openTab("wege"));
   view.querySelectorAll("[data-counter]").forEach((button) => button.addEventListener("click", () => openCounter(button.dataset.counter, { showToast })));
-  view.querySelectorAll("[data-crave]").forEach((button) => button.addEventListener("click", () => openPrayerSheet(button.dataset.crave, "craving", { openRead })));
+  view.querySelectorAll("[data-crave]").forEach((button) => button.addEventListener("click", () => openPrayerSheet([button.dataset.crave], "craving", { openRead })));
   view.querySelectorAll("[data-room]").forEach((button) => button.addEventListener("click", () => window.dispatchEvent(new CustomEvent("reso:open-room", { detail: button.dataset.room }))));
   view.querySelectorAll("[data-track]").forEach((button) => button.addEventListener("click", () => {
     const key = todayKey();
@@ -327,17 +355,21 @@ function trackerStreak() {
   return streak;
 }
 
-function openPrayerSheet(religion, moment, { openRead }) {
-  const tradition = religion === "christian" ? faith().christianTradition : faith().islamTradition;
-  const list = PRAYERS.filter((prayer) => prayer.religion === religion && prayer.moment === moment && (!prayer.traditions || prayer.traditions.includes(tradition)));
-  const verses = VERSES.filter((verse) => verse.religion === religion && verse.theme === (moment === "relapse" ? "forgiveness" : "temptation"));
-  const verse = verses[Math.floor(Math.random() * verses.length)];
+const VERSE_THEME = { relapse: "forgiveness", craving: "temptation", anxiety: "peace", gratitude: "gratitude", morning: "trust", evening: "peace", sleep: "peace" };
+export function openPrayerSheet(religionList, moment, { openRead }) {
+  const religions = [].concat(religionList);
+  const sections = religions.map((religion) => {
+    const tradition = religion === "christian" ? faith().christianTradition : faith().islamTradition;
+    const list = PRAYERS.filter((prayer) => prayer.religion === religion && prayer.moment === moment && (!prayer.traditions || prayer.traditions.includes(tradition)));
+    const verses = VERSES.filter((verse) => verse.religion === religion && verse.theme === (VERSE_THEME[moment] || "hope"));
+    const verse = verses[Math.floor(Math.random() * verses.length)];
+    return `${religions.length > 1 ? `<h4>${badge(religion)}</h4>` : ""}${list.map(prayerHtml).join("")}${verse ? `<div class="prayer-verse">${verseCard(verse, { actions: false })}</div>` : ""}`;
+  });
   const { dialog, close } = openSheet({
-    title: MOMENTS[moment],
+    title: MOMENTS[moment] || "Gebet",
     wide: true,
-    body: `<div class="prayer-sheet" style="--faith-font:${faith().fontSize}px">${list.map(prayerHtml).join("")}
-      ${verse ? `<div class="prayer-verse">${verseCard(verse, { actions: false })}</div>` : ""}
-      <p class="muted small">Das Verlangen geht vorbei – meist in 15 bis 30 Minuten. Du musst es nicht allein aushalten.</p></div>`,
+    body: `<div class="prayer-sheet" style="--faith-font:${faith().fontSize}px">${sections.join("")}
+      ${moment === "craving" ? '<p class="muted small">Das Verlangen geht vorbei – meist in 15 bis 30 Minuten. Du musst es nicht allein aushalten.</p>' : ""}</div>`,
   });
   dialog.querySelectorAll("[data-quran]").forEach((button) => button.addEventListener("click", () => {
     const [surah, ayah] = button.dataset.quran.split(",").map(Number);
@@ -356,24 +388,45 @@ const prayerHtml = (prayer) => `
   </article>`;
 
 // ---- Gebet -----------------------------------------------------------------------------------
+// Start of the last third of tonight (Maghrib today → Fajr tomorrow).
+export function lastThird(config, now = new Date()) {
+  const today = prayerTimes(ymdIn(config.timeZone, now), config);
+  // before today's Fajr we are still in last night
+  const [from, to] = today.fajr && now < today.fajr
+    ? [prayerTimes(ymdIn(config.timeZone, new Date(now.getTime() - 86400000)), config).maghrib, today.fajr]
+    : [today.maghrib, prayerTimes(ymdIn(config.timeZone, new Date(now.getTime() + 86400000)), config).fajr];
+  return from && to ? new Date(from.getTime() + ((to - from) * 2) / 3) : null;
+}
+
 function renderPrayer({ view, religions, showToast, openRead }) {
   const current = faith();
   const config = prayerConfig(current);
   let moment = "all";
-  const week = Array.from({ length: 7 }, (_, index) => addDays(new Date(), -6 + index));
+  let weekOffset = 0; // 0 = this week, -1 = last week …
+  const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+  const weekDays = () => {
+    const today = new Date();
+    const monday = addDays(today, -((today.getDay() + 6) % 7) + weekOffset * 7);
+    return Array.from({ length: 7 }, (_, index) => addDays(monday, index));
+  };
 
   const trackerGrid = (religion) => {
     const tradition = religion === "christian" ? current.christianTradition : current.islamTradition;
-    const items = TRACKER[religion].filter((item) => !item.traditions || item.traditions.includes(tradition));
+    const items = TRACKER[religion].filter((item) => (!item.extra || current.trackerExtras) && (!item.traditions || item.traditions.includes(tradition)));
     const log = faith().trackerLog;
-    const done = week.reduce((sum, day) => sum + items.filter((item) => log[todayKey(day)]?.[item.id]).length, 0);
+    const week = weekDays();
+    const today = todayKey();
+    const past = week.filter((day) => todayKey(day) <= today);
+    const done = past.reduce((sum, day) => sum + items.filter((item) => log[todayKey(day)]?.[item.id]).length, 0);
+    const range = `${week[0].toLocaleDateString("de-DE", { day: "numeric", month: "short" })} – ${week[6].toLocaleDateString("de-DE", { day: "numeric", month: "short" })}`;
     return `
       <section class="card faith-card">
-        <header>${badge(religion)}<span class="muted small">${done} von ${items.length * 7} in 7 Tagen</span></header>
-        <div class="tracker-grid" style="--cols:${week.length}">
-          <span></span>${week.map((day) => `<small>${day.toLocaleDateString("de-DE", { weekday: "narrow" })}</small>`).join("")}
-          ${items.map((item) => `<span class="tracker-label">${escapeHtml(item.label)}</span>${week.map((day) => `<button type="button" class="tracker-dot ${log[todayKey(day)]?.[item.id] ? "is-done" : ""}" data-day="${todayKey(day)}" data-item="${item.id}" aria-label="${escapeHtml(item.label)} ${day.toLocaleDateString("de-DE")}"></button>`).join("")}`).join("")}
+        <header>${badge(religion)}<span class="week-nav"><button type="button" class="icon-button" data-week="-1" aria-label="Vorherige Woche">‹</button><small>${weekOffset ? range : "Diese Woche"}</small><button type="button" class="icon-button" data-week="1" aria-label="Nächste Woche" ${weekOffset ? "" : "disabled"}>›</button></span></header>
+        <div class="tracker-grid" style="--cols:7">
+          <span></span>${week.map((day, index) => `<small class="${todayKey(day) === today ? "is-today" : ""}">${WEEKDAYS[index]}<b>${day.getDate()}</b></small>`).join("")}
+          ${items.map((item) => `<span class="tracker-label">${escapeHtml(item.label)}</span>${week.map((day) => `<button type="button" class="tracker-dot ${log[todayKey(day)]?.[item.id] ? "is-done" : ""} ${todayKey(day) === today ? "is-today" : ""}" data-day="${todayKey(day)}" data-item="${item.id}" ${todayKey(day) > today ? "disabled" : ""} aria-label="${escapeHtml(item.label)} ${day.toLocaleDateString("de-DE")}"></button>`).join("")}`).join("")}
         </div>
+        <small class="muted">${done} von ${items.length * past.length} erledigt${weekOffset ? "" : " – bisher diese Woche"}</small>
         ${religion === "islam" ? `<div class="qada"><span>Nachzuholende Gebete (Qaḍāʾ)</span><button type="button" class="icon-button" data-qada="-1">−</button><b id="qada">${current.qada}</b><button type="button" class="icon-button" data-qada="1">+</button></div>` : ""}
       </section>`;
   };
@@ -384,7 +437,16 @@ function renderPrayer({ view, religions, showToast, openRead }) {
       .sort((a, b) => religions.indexOf(a.religion) - religions.indexOf(b.religion)); // same daily order as everywhere
     const times = config ? prayerTimes(ymdIn(config.timeZone), config) : null;
     const weekTimes = config ? Array.from({ length: 7 }, (_, index) => { const day = addDays(new Date(), index); return { day, times: prayerTimes(ymdIn(config.timeZone, day), config) }; }) : [];
+    const night = config ? lastThird(config) : null;
+    const qiblaDeg = config ? Math.round(qibla(current.location.lat, current.location.lng)) : null;
     view.innerHTML = `
+      <section class="prayer-quick">
+        ${religions.map((religion) => `<button type="button" class="quick-tile is-learn" data-learn="${religion}"><span>🎓</span><b>Gebet lernen</b><small>${religion === "islam" ? "Ṣalāh Schritt für Schritt – mit Haltung" : "Kreuzzeichen & Vaterunser – mit Haltung"}</small></button>`).join("")}
+        ${religions.map((religion) => `<button type="button" class="quick-tile" data-counter="${religion}"><span>📿</span><b>${religion === "islam" ? "Tasbīḥ" : "Gebetsschnur"}</b><small>${religion === "islam" ? "Dhikr zählen – 33 · 33 · 34" : current.christianTradition === "catholic" ? "Rosenkranz & Jesusgebet" : "Jesusgebet & Kyrie"}</small></button>`).join("")}
+        <button type="button" class="quick-tile" data-still><span>🕊️</span><b>Moment der Stille</b><small>2 Minuten mit Gott</small></button>
+        ${religions.map((religion) => `<button type="button" class="quick-tile" data-moment-sheet="${religion}"><span>🔥</span><b>${religion === "islam" ? "Duʿāʾ" : "Gebet"} bei Verlangen</b><small>${badge(religion)}</small></button>`).join("")}
+        ${qiblaDeg !== null ? `<div class="quick-tile qibla-tile"><span class="qibla-compass" style="--deg:${qiblaDeg}deg"><i></i></span><b>Qibla ${qiblaDeg}°</b><small>von Norden im Uhrzeigersinn</small></div>` : ""}
+      </section>
       ${religions.includes("islam") ? `
         <section class="card faith-card times-card">
           <header>${badge("islam")}<span class="faith-actions"><button class="link-button" id="place" type="button">📍 ${escapeHtml(current.location?.name || "Standort festlegen")}</button>${config ? '<button class="link-button" id="adjust" type="button">Feinjustieren</button>' : ""}</span></header>
@@ -393,6 +455,7 @@ function renderPrayer({ view, religions, showToast, openRead }) {
             <details class="times-week"><summary>Die nächsten 7 Tage</summary><table><thead><tr><th></th>${PRAYER_TIMES.map((prayer) => `<th>${prayer.label}</th>`).join("")}</tr></thead><tbody>
               ${weekTimes.map(({ day, times: dayTimes }) => `<tr><th>${day.toLocaleDateString("de-DE", { weekday: "short", day: "numeric", month: "numeric" })}</th>${PRAYER_TIMES.map((prayer) => `<td>${formatClock(dayTimes[prayer.id], config.timeZone)}</td>`).join("")}</tr>`).join("")}
             </tbody></table></details>
+            ${night ? `<p class="night-third">🌌 Letztes Drittel der Nacht (Tahadschud): ab <b>${formatClock(night, config.timeZone)}</b> bis Fadschr</p>` : ""}
             <small class="muted">Berechnung: ${escapeHtml(methodLabel(current.method))} · Asr ${current.islamTradition === "sunni-hanafi" ? "hanafitisch" : "Standard"} · Qibla ${qiblaText(current.location)}</small>`
             : '<p class="muted">Ohne Standort können keine Gebetszeiten berechnet werden.</p>'}
         </section>` : ""}
@@ -401,11 +464,14 @@ function renderPrayer({ view, religions, showToast, openRead }) {
         <div class="chip-row">${[["all", "Alle"], ...Object.entries(MOMENTS)].map(([id, label]) => `<button type="button" class="chip ${moment === id ? "is-selected" : ""}" data-moment="${id}">${escapeHtml(label)}</button>`).join("")}</div>
         <div class="prayer-list" style="--faith-font:${current.fontSize}px">${list.map(prayerHtml).join("") || '<p class="muted">Für diesen Moment gibt es hier noch kein Gebet.</p>'}</div>
       </section>
-      <div class="faith-actions centered">${religions.map((religion) => `<button class="button button-secondary" data-counter="${religion}" type="button">📿 ${religion === "islam" ? "Tasbīḥ-Zähler" : "Gebetsschnur"}</button>`).join("")}</div>`;
+`;
     view.querySelector("#place")?.addEventListener("click", () => openLocationSheet({ showToast, onSaved: draw }));
     view.querySelector("#adjust")?.addEventListener("click", () => openAdjustSheet({ showToast, onSaved: draw }));
     view.querySelectorAll("[data-moment]").forEach((button) => button.addEventListener("click", () => { moment = button.dataset.moment; draw(); }));
     view.querySelectorAll("[data-counter]").forEach((button) => button.addEventListener("click", () => openCounter(button.dataset.counter, { showToast })));
+    view.querySelector("[data-still]")?.addEventListener("click", () => openStillness(religions));
+    view.querySelectorAll("[data-learn]").forEach((button) => button.addEventListener("click", () => openLearn(button.dataset.learn)));
+    view.querySelectorAll("[data-moment-sheet]").forEach((button) => button.addEventListener("click", () => openPrayerSheet([button.dataset.momentSheet], "craving", { openRead })));
     view.querySelectorAll("[data-quran]").forEach((button) => button.addEventListener("click", () => {
       const [surah, ayah] = button.dataset.quran.split(",").map(Number);
       openRead({ religion: "islam", surah, ayah });
@@ -414,6 +480,10 @@ function renderPrayer({ view, religions, showToast, openRead }) {
       const qada = Math.max(0, faith().qada + Number(button.dataset.qada));
       saveFaith({ qada });
       view.querySelector("#qada").textContent = String(qada);
+    }));
+    view.querySelectorAll("[data-week]").forEach((button) => button.addEventListener("click", () => {
+      weekOffset = Math.min(0, weekOffset + Number(button.dataset.week));
+      draw();
     }));
     view.querySelectorAll(".tracker-dot").forEach((dot) => dot.addEventListener("click", () => {
       const log = faith().trackerLog;

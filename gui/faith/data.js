@@ -371,10 +371,14 @@ export const COUNTERS = {
 export const TRACKER = {
   islam: [
     { id: "fajr", label: "Fadschr" }, { id: "dhuhr", label: "Dhuhr" }, { id: "asr", label: "Asr" }, { id: "maghrib", label: "Maghrib" }, { id: "isha", label: "Ischa" },
+    { id: "quran", label: "Koran gelesen", extra: true }, { id: "dhikr", label: "Dhikr", extra: true }, { id: "witr", label: "Witr", extra: true },
+    { id: "tahajjud", label: "Tahadschud", extra: true }, { id: "fast", label: "Gefastet", extra: true }, { id: "sadaqa", label: "Ṣadaqa / gute Tat", extra: true },
   ],
   christian: [
     { id: "morning", label: "Morgengebet" }, { id: "bible", label: "Bibel gelesen" }, { id: "evening", label: "Abendgebet" },
     { id: "rosary", label: "Rosenkranz", traditions: ["catholic"] }, { id: "jesus", label: "Jesusgebet", traditions: ["orthodox"] },
+    { id: "thanks", label: "Dankgebet", extra: true }, { id: "examen", label: "Tagesrückblick", extra: true }, { id: "service", label: "Gottesdienst", extra: true },
+    { id: "fast", label: "Verzicht / Fasten", extra: true }, { id: "deed", label: "Gute Tat", extra: true },
   ],
 };
 

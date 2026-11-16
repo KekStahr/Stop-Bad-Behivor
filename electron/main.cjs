@@ -26,26 +26,43 @@ const isolatedData = process.env.RESO_USER_DATA;
 if (isolatedData) {
   app.setPath("userData", isolatedData);
   allowQuit = true; // test instances may close immediately
+} else {
+  // The data folder stays where it has always been, even though the app is now called "Life".
+  app.setPath("userData", path.join(app.getPath("appData"), "reso-desktop"));
 }
+app.setName("Life");
+
+// Energy saver (default on): no GPU process. Life's interface is simple enough to draw on the
+// CPU, and this removes the biggest memory and CPU consumer. Must be decided before "ready".
+function energySaverEnabled() {
+  try {
+    const stored = JSON.parse(fs.readFileSync(path.join(app.getPath("userData"), "stats_data.json"), "utf8"));
+    return stored.energy_saver !== false;
+  } catch {
+    return true;
+  }
+}
+const energySaver = energySaverEnabled();
+if (energySaver) app.disableHardwareAcceleration();
 
 protocol.registerSchemesAsPrivileged([
   { scheme: "reso", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
 ]);
 
-// Only one Reşo at a time: a second start just brings the running one to the front.
+// Only one Life at a time: a second start just brings the running one to the front.
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on("second-instance", () => showWindow());
   app.whenReady().then(start).catch((error) => {
-    console.error("Reşo start-up failed:", error);
+    console.error("Life start-up failed:", error);
     app.exit(1);
   });
 }
 
 function registerAppProtocol() {
   const guiDirectory = path.resolve(__dirname, "..", "gui");
-  const contentTypes = new Map([[".html", "text/html; charset=utf-8"], [".js", "text/javascript; charset=utf-8"], [".css", "text/css; charset=utf-8"], [".png", "image/png"]]);
+  const contentTypes = new Map([[".html", "text/html; charset=utf-8"], [".js", "text/javascript; charset=utf-8"], [".css", "text/css; charset=utf-8"], [".png", "image/png"], [".svg", "image/svg+xml"]]);
   protocol.handle("reso", async (request) => {
     const url = new URL(request.url);
     if (url.hostname !== "app") return new Response("Not found", { status: 404 });
@@ -115,7 +132,7 @@ function quitAction(action) {
     store.data.shutdown_deadline_epoch = (Date.now() + QUIT_DELAY_MS) / 1000;
     store.save();
     emit("quit-changed", appState());
-    tray?.displayBalloon({ iconType: "info", title: "Reşo beendet sich in 30 Minuten", content: "Du kannst es dir jederzeit anders überlegen: Rechtsklick auf das Symbol → „Beenden abbrechen“." });
+    tray?.displayBalloon({ iconType: "info", title: "Life beendet sich in 30 Minuten", content: "Du kannst es dir jederzeit anders überlegen: Rechtsklick auf das Symbol → „Beenden abbrechen“." });
   } else if (action === "cancel") {
     store.data.shutdown_deadline_epoch = null;
     store.save();
@@ -125,7 +142,7 @@ function quitAction(action) {
   return appState();
 }
 function appState() {
-  return { quitDeadline: quitDeadline(), autostart: getAutostart(), monitorAvailable: monitor?.available() || false };
+  return { quitDeadline: quitDeadline(), autostart: getAutostart(), monitorAvailable: monitor?.available() || false, energySaver };
 }
 
 // ---- tray --------------------------------------------------------------------------
@@ -133,7 +150,7 @@ const clock = (ms) => `${String(Math.floor(ms / 60000)).padStart(2, "0")}:${Stri
 function trayMenu() {
   const deadline = quitDeadline();
   return Menu.buildFromTemplate([
-    { label: "Reşo öffnen", click: () => showWindow() },
+    { label: "Life öffnen", click: () => showWindow() },
     { label: "Ich brauche Hilfe", click: () => { showWindow(); emit("sos"); } },
     { label: "Fokus-Session", click: () => { showWindow(); emit("navigate", { page: "timer" }); } },
     { type: "separator" },
@@ -147,7 +164,7 @@ let trayLabel = "";
 function updateTray() {
   if (!tray) return;
   const deadline = quitDeadline();
-  const label = deadline ? `Reşo – beendet sich in ${clock(deadline - Date.now())}` : "Reşo – ich bin für dich da";
+  const label = deadline ? `Life – beendet sich in ${clock(deadline - Date.now())}` : "Life – ich bin für dich da";
   if (label === trayLabel) return;
   trayLabel = label;
   tray.setToolTip(label);
@@ -179,7 +196,7 @@ function createWindow() {
     backgroundColor: "#111318",
     autoHideMenuBar: true,
     icon: path.join(__dirname, "assets", "icon.png"),
-    title: "Reşo",
+    title: "Life",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -197,7 +214,7 @@ function createWindow() {
       event.preventDefault();
     }
   });
-  // The X only hides the window – Reşo keeps protecting you from the tray.
+  // The X only hides the window – Life keeps protecting you from the tray.
   mainWindow.on("close", (event) => {
     if (allowQuit) return;
     event.preventDefault();
@@ -205,7 +222,7 @@ function createWindow() {
     if (!store.data.tray_hint_shown && Notification.isSupported()) {
       store.data.tray_hint_shown = true;
       store.save();
-      new Notification({ title: "Reşo läuft weiter", body: "Du findest mich unten rechts im Infobereich. Zum Beenden: Rechtsklick auf das Symbol." }).show();
+      new Notification({ title: "Life läuft weiter", body: "Du findest mich unten rechts im Infobereich. Zum Beenden: Rechtsklick auf das Symbol." }).show();
     }
   });
   mainWindow.on("session-end", () => { allowQuit = true; }); // Windows shutdown / sign-out
@@ -227,7 +244,7 @@ function openPauseWindow() {
     alwaysOnTop: true,
     autoHideMenuBar: true,
     backgroundColor: "#111113",
-    title: "Reşo · Kurz innehalten",
+    title: "Life · Kurz innehalten",
     icon: path.join(__dirname, "assets", "icon.png"),
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
@@ -281,6 +298,8 @@ function configureMonitor() {
 }
 
 function onTrigger(word) {
+  // Typing inside Life itself (e.g. talking about one's addiction in the community) is never a relapse.
+  if (mainWindow?.isFocused()) return;
   core.recordTrigger(word);
   if (prefs().closeBrowsers !== false) { // on by default
     for (const name of BROWSERS) execFile("taskkill", ["/IM", name, "/F"], { windowsHide: true }, () => {});

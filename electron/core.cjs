@@ -267,6 +267,7 @@ function createCore({ store, host = {}, fetchImpl = globalThis.fetch, now = () =
       communityName: values.community_author_name || "",
       streakStart: values.streak_start_iso || null,
       autostart: host.getAutostart ? host.getAutostart() : false,
+      energySaver: values.energy_saver !== false,
       monitorAvailable: host.monitorAvailable ? host.monitorAvailable() : false,
     };
   }
@@ -312,6 +313,10 @@ function createCore({ store, host = {}, fetchImpl = globalThis.fetch, now = () =
       if (typeof body.streakStart !== "string" || !ISO_LOCAL.test(body.streakStart) || Number.isNaN(start.getTime())) throw new UserError("Das Startdatum hat ein ungültiges Format.");
       if (start > now()) throw new UserError("Das Startdatum darf nicht in der Zukunft liegen.");
       updates.streak_start_iso = localIso(start);
+    }
+    if ("energySaver" in body) {
+      if (typeof body.energySaver !== "boolean") throw new UserError("Energiesparmodus muss ein Wahr/Falsch-Wert sein.");
+      values.energy_saver = body.energySaver; // takes effect after a restart (graphics are set up at start)
     }
     if ("autostart" in body) {
       if (typeof body.autostart !== "boolean") throw new UserError("Autostart muss ein Wahr/Falsch-Wert sein.");

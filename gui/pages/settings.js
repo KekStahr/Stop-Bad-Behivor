@@ -42,7 +42,7 @@ const SECTIONS = [
     id: "ai", title: "Frühwarnsystem (KI)", icon: "✦", tone: "var(--purple, #AF52DE)", rows: [
       { key: "aiWarnings", type: "toggle", label: "Frühwarnungen", hint: "Eine lokale KI lernt aus deinen bisherigen Momenten, wann es für dich schwer wird, und unterstützt dich vorher. Alles bleibt auf diesem Gerät." },
       { key: "aiLeadMinutes", type: "select", label: "Vorwarnzeit", options: [[15, "15 Minuten vorher"], [30, "30 Minuten vorher"], [60, "1 Stunde vorher"]], numeric: true },
-      { key: "aiNotify", type: "toggle", label: "Systembenachrichtigung", hint: "Auch melden, wenn Reşo im Hintergrund ist." },
+      { key: "aiNotify", type: "toggle", label: "Systembenachrichtigung", hint: "Auch melden, wenn Life im Hintergrund ist." },
       { key: "aiPatterns", type: "action", label: "Deine Muster", button: "Ansehen" },
     ],
   },
@@ -116,7 +116,7 @@ const SECTIONS = [
   },
   {
     id: "helper", title: "Vertrauensperson", icon: "🤝", tone: "var(--teal)", rows: [
-      { key: "helperEnabled", type: "toggle", label: "Ich bin Vertrauensperson", hint: "Braucht jemand Hilfe, kann Reşo dich fragen. Du entscheidest jedes Mal selbst: helfen oder weitersenden (dann 1 Stunde Ruhe)." },
+      { key: "helperEnabled", type: "toggle", label: "Ich bin Vertrauensperson", hint: "Braucht jemand Hilfe, kann Life dich fragen. Du entscheidest jedes Mal selbst: helfen oder weitersenden (dann 1 Stunde Ruhe)." },
       { key: "helperDays", type: "days", label: "An diesen Tagen" },
       { key: "helperFrom", type: "time", label: "Ab", hint: "Leer lassen = den ganzen Tag." },
       { key: "helperTo", type: "time", label: "Bis" },
@@ -124,7 +124,7 @@ const SECTIONS = [
   },
   {
     id: "protection", title: "Schutz & Erkennung", icon: "🛡️", tone: "var(--red)", rows: [
-      { key: "catalog", type: "catalog", label: "Schutz-Kategorien", hint: "Aktiviere Kategorien – Reşo erkennt die Begriffe beim Tippen und hilft dir genau in dem Moment." },
+      { key: "catalog", type: "catalog", label: "Schutz-Kategorien", hint: "Aktiviere Kategorien – Life erkennt die Begriffe beim Tippen und hilft dir genau in dem Moment." },
       { key: "triggerCustom", store: "backend", type: "textarea", label: "Eigene Begriffe", hint: "Zusätzlich zu den Kategorien, kommagetrennt. Bitte eindeutige Begriffe wählen – kurze Wörter lösen sonst auch in normalen Sätzen aus.", max: 4000 },
       { key: "stressDetection", store: "backend", type: "toggle", label: "Tipp-Tempo-Erkennung", hint: "Bei sehr hektischem Tippen öffnet sich „Kurz innehalten“." },
       { key: "keyboardLayout", type: "select", label: "Tastatur", hint: "Damit Begriffe mit Umlauten und Y/Z richtig erkannt werden.", options: [["de", "Deutsch (QWERTZ)"], ["us", "Englisch (QWERTY)"]] },
@@ -132,37 +132,15 @@ const SECTIONS = [
     ],
   },
   {
-    id: "faith", title: "Glaube", icon: "🕊️", tone: "#c9a24a", rows: [
+    id: "faith", title: "Glaube – Allgemein", icon: "🕊️", tone: "#c9a24a", rows: [
       { key: "enabled", store: "faith", type: "toggle", label: "Bereich Glaube aktivieren", hint: "Gebet, Bibel und Koran, Gebetszeiten, Kalender und Tagebuch. Alles wird verschlüsselt nur auf diesem Gerät gespeichert." },
-      { key: "christian", store: "faith", type: "toggle", label: "✝ Christentum" },
-      { key: "christianTradition", store: "faith", type: "select", label: "Konfession", hint: "Bestimmt Feiertage, Gebete und Kirchenjahr.", options: CHRISTIAN_TRADITIONS },
-      { key: "islam", store: "faith", type: "toggle", label: "☪ Islam" },
-      { key: "islamTradition", store: "faith", type: "select", label: "Rechtsschule", hint: "Bestimmt Asr-Zeit, Feiertage und Gebete.", options: ISLAM_TRADITIONS },
       { key: "order", store: "faith", type: "select", label: "Reihenfolge, wenn beide aktiv sind", hint: "„Abwechselnd“ wechselt täglich, welche zuerst erscheint – so steht keine Seite immer hinten.", options: [["alternate", "Abwechselnd"], ["christian", "Christentum zuerst"], ["islam", "Islam zuerst"]] },
-      { key: "faithPlace", type: "action", label: "Standort für Gebetszeiten", hint: "Stadt suchen oder Koordinaten selbst eingeben.", button: "Festlegen" },
-      { key: "method", store: "faith", type: "select", label: "Berechnungsmethode", options: Object.entries(METHODS).map(([id, item]) => [id, item.label]) },
-      { key: "highLat", store: "faith", type: "select", label: "Sommer in nördlichen Ländern", hint: "Wenn die Sonne nachts nicht tief genug sinkt (z. B. Juni in Deutschland).", options: [["angle", "Winkelbasiert (empfohlen)"], ["seventh", "Ein Siebtel der Nacht"], ["middle", "Mitte der Nacht"]] },
-      { key: "faithAdjust", type: "action", label: "Gebetszeiten feinjustieren", hint: "An die Zeiten deiner Moschee angleichen.", button: "Anpassen" },
-      { key: "hijriAdjust", store: "faith", type: "select", label: "Hidschri-Datum", hint: "Je nach Mondsichtung in deiner Gemeinde.", options: [[-2, "−2 Tage"], [-1, "−1 Tag"], [0, "Umm al-Qura (Standard)"], [1, "+1 Tag"], [2, "+2 Tage"]], numeric: true, min: -2, max: 2 },
-      { key: "prayerReminders", store: "faith", type: "toggle", label: "An Gebetszeiten erinnern", hint: "Auch wenn Reşo im Hintergrund läuft." },
-      { key: "remindPrayers", store: "faith", type: "chips", label: "Diese Gebete", options: [["fajr", "Fadschr"], ["dhuhr", "Dhuhr"], ["asr", "Asr"], ["maghrib", "Maghrib"], ["isha", "Ischa"]] },
-      { key: "reminderLead", store: "faith", type: "select", label: "Erinnerung", options: [[0, "Zur Gebetszeit"], [5, "5 Minuten vorher"], [10, "10 Minuten vorher"], [15, "15 Minuten vorher"], [30, "30 Minuten vorher"]], numeric: true, min: 0, max: 30 },
-      { key: "jumuah", store: "faith", type: "toggle", label: "Freitagsgebet (Dschumuʿa)", hint: "45 Minuten vor Dhuhr am Freitag." },
-      { key: "christianReminders", store: "faith", type: "toggle", label: "An Morgen- und Abendgebet erinnern" },
-      { key: "morningPrayer", store: "faith", type: "time", label: "Morgengebet" },
-      { key: "eveningPrayer", store: "faith", type: "time", label: "Abendgebet" },
-      { key: "angelus", store: "faith", type: "toggle", label: "Angelus (6, 12 und 18 Uhr)" },
-      { key: "sundayService", store: "faith", type: "toggle", label: "Gottesdienst am Sonntag", hint: "Erinnerung 45 Minuten vorher." },
-      { key: "sundayTime", store: "faith", type: "time", label: "Beginn des Gottesdienstes" },
       { key: "tracker", store: "faith", type: "toggle", label: "Gebets-Tracker anzeigen", hint: "Abhaken, ob du deine Gebete gemacht hast. Ausgeschaltet wird er nirgends angezeigt." },
+      { key: "trackerExtras", store: "faith", type: "toggle", label: "Mehr Punkte im Tracker", hint: "Z. B. Koran/Bibel gelesen, Dhikr, Tagesrückblick, Fasten, gute Tat." },
       { key: "fasting", store: "faith", type: "toggle", label: "Fasten-Begleiter", hint: "Ramadan mit Iftar-Zeit bzw. Fastenzeit bis Ostern." },
       { key: "homeCard", store: "faith", type: "toggle", label: "Auf der Übersicht anzeigen", hint: "Nächstes Gebet und Vers des Tages." },
       { key: "versesInQuotes", store: "faith", type: "select", label: "Verse im Zitat-Fenster", options: [["mixed", "Zitate und Verse gemischt"], ["only", "Nur Verse aus Bibel/Koran"], ["off", "Keine Verse"]] },
       { key: "community", store: "faith", type: "toggle", label: "Glaubensräume in der Community", hint: "Öffnet versteckte Räume zum Austausch unter Gläubigen." },
-      { key: "bibleTranslation", store: "faith", type: "select", label: "Bibelübersetzung", options: BIBLE_TRANSLATIONS },
-      { key: "quranEdition", store: "faith", type: "select", label: "Koran-Übersetzung", options: QURAN_EDITIONS },
-      { key: "showArabic", store: "faith", type: "toggle", label: "Arabischen Originaltext zeigen" },
-      { key: "reciter", store: "faith", type: "select", label: "Koran-Rezitation", options: RECITERS },
       { key: "fontSize", store: "faith", type: "range", label: "Schriftgröße beim Lesen", min: 14, max: 34, step: 1, format: (value) => `${value} px` },
       { key: "theme", store: "faith", type: "select", label: "Darstellung", options: [["auto", "Passend zum Hintergrund"], ["light", "Hell"], ["dark", "Dunkel"]] },
       { key: "scene", store: "faith", type: "select", label: "Hintergrund", options: Object.entries(SCENES).map(([id, item]) => [id, item.label]) },
@@ -170,6 +148,38 @@ const SECTIONS = [
       { key: "navHidden", store: "faith", type: "toggle", label: "„Glaube“ in der Seitenleiste ausblenden" },
       { key: "faithPin", type: "action", label: "PIN-Schutz", hint: "Schützt den Bereich, wenn andere deinen PC benutzen.", button: "PIN festlegen" },
       { key: "faithDelete", type: "action", label: "Alle Glaubens-Daten löschen", hint: "Tagebuch, Tracker, Lesezeichen und Einstellungen dieses Bereichs.", button: "Löschen", danger: true },
+    ],
+  },
+  {
+    id: "faith-christian", title: "Glaube · Christentum", icon: "✝", tone: "#c9a24a", rows: [
+      { key: "christian", store: "faith", type: "toggle", label: "Christentum aktivieren", hint: "Bibel, Gebete, Kirchenjahr, Gebetsschnur und christlicher Raum." },
+      { key: "christianTradition", store: "faith", type: "select", label: "Konfession", hint: "Bestimmt Feiertage, Gebete und Kirchenjahr.", options: CHRISTIAN_TRADITIONS },
+      { key: "bibleTranslation", store: "faith", type: "select", label: "Bibelübersetzung", options: BIBLE_TRANSLATIONS },
+      { key: "christianReminders", store: "faith", type: "toggle", label: "An Morgen- und Abendgebet erinnern" },
+      { key: "morningPrayer", store: "faith", type: "time", label: "Morgengebet" },
+      { key: "eveningPrayer", store: "faith", type: "time", label: "Abendgebet" },
+      { key: "angelus", store: "faith", type: "toggle", label: "Angelus (6, 12 und 18 Uhr)" },
+      { key: "sundayService", store: "faith", type: "toggle", label: "Gottesdienst am Sonntag", hint: "Erinnerung 45 Minuten vorher." },
+      { key: "sundayTime", store: "faith", type: "time", label: "Beginn des Gottesdienstes" },
+    ],
+  },
+  {
+    id: "faith-islam", title: "Glaube · Islam", icon: "☪", tone: "#c9a24a", rows: [
+      { key: "islam", store: "faith", type: "toggle", label: "Islam aktivieren", hint: "Koran, Gebetszeiten, Hidschri-Kalender, Tasbīḥ und muslimischer Raum." },
+      { key: "islamTradition", store: "faith", type: "select", label: "Rechtsschule", hint: "Bestimmt Asr-Zeit, Feiertage und Gebete.", options: ISLAM_TRADITIONS },
+      { key: "faithPlace", type: "action", label: "Standort für Gebetszeiten", hint: "Stadt suchen oder Koordinaten selbst eingeben.", button: "Festlegen" },
+      { key: "method", store: "faith", type: "select", label: "Berechnungsmethode", options: Object.entries(METHODS).map(([id, item]) => [id, item.label]) },
+      { key: "highLat", store: "faith", type: "select", label: "Sommer in nördlichen Ländern", hint: "Wenn die Sonne nachts nicht tief genug sinkt (z. B. Juni in Deutschland).", options: [["angle", "Winkelbasiert (empfohlen)"], ["seventh", "Ein Siebtel der Nacht"], ["middle", "Mitte der Nacht"]] },
+      { key: "faithAdjust", type: "action", label: "Gebetszeiten feinjustieren", hint: "An die Zeiten deiner Moschee angleichen.", button: "Anpassen" },
+      { key: "hijriAdjust", store: "faith", type: "select", label: "Hidschri-Datum", hint: "Je nach Mondsichtung in deiner Gemeinde.", options: [[-2, "−2 Tage"], [-1, "−1 Tag"], [0, "Umm al-Qura (Standard)"], [1, "+1 Tag"], [2, "+2 Tage"]], numeric: true, min: -2, max: 2 },
+      { key: "prayerReminders", store: "faith", type: "toggle", label: "An Gebetszeiten erinnern", hint: "Auch wenn Life im Hintergrund läuft." },
+      { key: "remindPrayers", store: "faith", type: "chips", label: "Diese Gebete", options: [["fajr", "Fadschr"], ["dhuhr", "Dhuhr"], ["asr", "Asr"], ["maghrib", "Maghrib"], ["isha", "Ischa"]] },
+      { key: "reminderLead", store: "faith", type: "select", label: "Erinnerung", options: [[0, "Zur Gebetszeit"], [5, "5 Minuten vorher"], [10, "10 Minuten vorher"], [15, "15 Minuten vorher"], [30, "30 Minuten vorher"]], numeric: true, min: 0, max: 30 },
+      { key: "jumuah", store: "faith", type: "toggle", label: "Freitagsgebet (Dschumuʿa)", hint: "45 Minuten vor Dhuhr am Freitag." },
+      { key: "tahajjudReminder", store: "faith", type: "toggle", label: "An das Nachtgebet (Tahadschud) erinnern", hint: "Zu Beginn des letzten Drittels der Nacht." },
+      { key: "quranEdition", store: "faith", type: "select", label: "Koran-Übersetzung", options: QURAN_EDITIONS },
+      { key: "showArabic", store: "faith", type: "toggle", label: "Arabischen Originaltext zeigen" },
+      { key: "reciter", store: "faith", type: "select", label: "Koran-Rezitation", options: RECITERS },
     ],
   },
   {
@@ -186,8 +196,9 @@ const SECTIONS = [
   {
     id: "data", title: "Daten & System", icon: "⚙︎", tone: "var(--graphite)", rows: [
       { key: "export", type: "action", label: "Daten exportieren", hint: "Einstellungen und Statistiken als JSON-Datei.", button: "Exportieren" },
-      { key: "autostart", store: "backend", type: "toggle", label: "Mit Windows starten", hint: "Reşo startet unauffällig im Infobereich (unten rechts) und schützt dich ab dem ersten Moment." },
-      { key: "quit", type: "action", label: "Reşo beenden", hint: "Zum Schutz vor Kurzschluss-Entscheidungen beendet sich Reşo erst nach 30 Minuten. Abbrechen geht jederzeit.", button: "Beenden …", danger: true },
+      { key: "energySaver", store: "backend", type: "toggle", label: "Energiesparmodus", hint: "Life zeichnet ohne Grafikkarte und spart so rund die Hälfte an Arbeitsspeicher und Strom. Wirkt nach einem Neustart von Life." },
+      { key: "autostart", store: "backend", type: "toggle", label: "Mit Windows starten", hint: "Life startet unauffällig im Infobereich (unten rechts) und schützt dich ab dem ersten Moment." },
+      { key: "quit", type: "action", label: "Life beenden", hint: "Zum Schutz vor Kurzschluss-Entscheidungen beendet sich Life erst nach 30 Minuten. Abbrechen geht jederzeit.", button: "Beenden …", danger: true },
       { key: "reset", type: "action", label: "Darstellung zurücksetzen", hint: "Setzt alle Einstellungen dieser Oberfläche zurück. Dein Fortschritt bleibt erhalten.", button: "Zurücksetzen", danger: true },
     ],
   },
@@ -206,6 +217,7 @@ function backendValues(data) {
     triggerCustom: (data.triggerWords || []).filter((word) => !ALL_CATALOG_WORDS.has(word)).join(", "),
     stressDetection: Boolean(data.stressDetection),
     autostart: Boolean(data.autostart),
+    energySaver: data.energySaver !== false,
   };
 }
 
@@ -255,7 +267,7 @@ function control(row, value) {
             <span class="catalog-copy"><strong>${escapeHtml(category.label)}</strong><small>${category.words.length} Begriffe · <button type="button" class="link-button" data-expand>ansehen</button></small></span>
             <label class="switch"><input type="checkbox" data-catalog-toggle ${enabled.includes(category.id) ? "checked" : ""} aria-label="${escapeHtml(category.label)}"><span></span></label>
           </div>
-          <div class="catalog-words" hidden>${category.words.map((word) => `<span>${escapeHtml(word)}</span>`).join("")}</div>
+          <div class="catalog-words" hidden>${category.words.map((word) => `<span>${escapeHtml(word.replace(/^=/, ""))}</span>`).join("")}</div>
         </div>`).join("")}</div>`;
     }
     case "action":
@@ -373,6 +385,8 @@ export async function render(root, { api, showToast }) {
         return backend.streakStart ? { streakStart: backend.streakStart } : null;
       case "autostart":
         return { autostart: backend.autostart };
+      case "energySaver":
+        return { energySaver: backend.energySaver };
       case "stressDetection":
         return { stressDetection: backend.stressDetection };
       default:
@@ -541,7 +555,7 @@ export async function render(root, { api, showToast }) {
       }
     }
     if (action === "quit") {
-      const ok = await confirmSheet({ title: "Reşo beenden?", text: "Reşo beendet sich in 30 Minuten. Bis dahin kannst du es dir anders überlegen – über das Banner oben oder das Symbol unten rechts.", confirmLabel: "Countdown starten", danger: true });
+      const ok = await confirmSheet({ title: "Life beenden?", text: "Life beendet sich in 30 Minuten. Bis dahin kannst du es dir anders überlegen – über das Banner oben oder das Symbol unten rechts.", confirmLabel: "Countdown starten", danger: true });
       if (ok) {
         await api("/api/app/quit", { method: "POST", body: { action: "start" } });
         showToast("Countdown gestartet. Du kannst ihn jederzeit abbrechen.");

@@ -53,6 +53,14 @@ export const FAITH_DEFAULTS = {
   readChapters: { islam: [], christian: [] },
   counters: {}, // { tasbih: total }
   favorites: [], // verse refs
+  trackerExtras: false,
+  tahajjudReminder: false,
+  planProgress: {}, // { planId: [dayIndex, …] }
+  freedomDone: [], // day indexes of "21 Tage in die Freiheit"
+  steps: {}, // { stepIndex: { done, note } }
+  deeds: [], // { id, text, at }
+  namesLearned: [], // indexes into ASMA / GOD_NAMES, prefixed "i" / "c"
+  memorized: [], // verse refs
 };
 
 let state = null;

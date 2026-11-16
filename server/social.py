@@ -55,7 +55,6 @@ MAX_FRIENDS = 200
 REACTIONS = {"💪", "❤️", "🙏", "🔥", "🫂"}
 REPORT_REASONS = {"spam", "harassment", "dealing", "danger", "other"}
 OFFER_TIMEOUT = 45          # seconds a trusted person has to answer
-FORWARD_COOLDOWN = 3600     # "send to someone else" → not asked again for an hour
 SEARCH_LIMIT = 20 * 60      # stop searching after 20 minutes
 SESSION_SECONDS = 5 * 60    # a crisis chat runs in 5-minute rounds
 DECIDE_SECONDS = 120        # time both sides have to say "keep talking"
@@ -67,15 +66,7 @@ COMMUNITY_TIPS = [
     "Verlangen dauert meist 15–30 Minuten. Plane für diese Zeit etwas, das deine Hände beschäftigt.",
     "Die ersten zwei Wochen und Wochenend-Abende sind für viele die schwierigsten Zeiten.",
 ]
-CHALLENGES = [
-    {"id": "7-days", "emoji": "🔥", "title": "7 Tage stark", "days": 7, "text": "Eine Woche frei – gemeinsam. Hake jeden Tag ab, an dem du durchgehalten hast."},
-    {"id": "30-days", "emoji": "🏔️", "title": "30-Tage-Gipfel", "days": 30, "text": "Ein ganzer Monat. Der Gipfel ist hoch, aber du gehst nicht allein."},
-    {"id": "focus-10", "emoji": "⏱️", "title": "Jeden Tag 10 Min. Fokus", "days": 14, "text": "Zwei Wochen lang täglich zehn Minuten ohne Ablenkung."},
-    {"id": "gratitude", "emoji": "🙏", "title": "Dankbarkeits-Woche", "days": 7, "text": "Schreib jeden Tag eine Sache auf, für die du dankbar bist."},
-    {"id": "move", "emoji": "🏃", "title": "Jeden Tag bewegen", "days": 21, "text": "21 Tage, jeden Tag mindestens 20 Minuten Bewegung – Spaziergang zählt."},
-    {"id": "screen-free", "emoji": "🌙", "title": "Bildschirmfreie Abende", "days": 7, "text": "Ab 21 Uhr kein Handy im Bett. Besser schlafen, weniger Verlangen."},
-]
-CHALLENGE_IDS = {challenge["id"] for challenge in CHALLENGES}
+from challenges import CHALLENGES, CHALLENGE_IDS, CATEGORIES as CHALLENGE_CATEGORIES  # noqa: E402
 QUOTES = [
     ["Du musst nicht den ganzen Weg sehen. Nur den nächsten Schritt.", "Reşo"],
     ["Es ist nie „nur einmal“. Bleib dran.", "Reşo"],
@@ -283,6 +274,7 @@ class HelpSchema(SocialBaseSchema):
     note: str = ""
     report: str = ""
     block: bool = False
+    pause_minutes: int = 60
 
 
 # ---------------------------------------------------------------- helpers
@@ -765,16 +757,24 @@ def social_challenges(data: ChallengeSchema, db: Session = Depends(get_db)):
                 member.last_done_at = time.time()
                 member.name = profile.name
         db.commit()
+    # one query for all participants instead of one per challenge (there are ~300)
+    stats = {}
+    for member in db.query(ChallengeParticipantDB).all():
+        entry = stats.setdefault(member.challenge_id, {"participants": 0, "today": 0, "mine": None})
+        days = json.loads(member.done_days or "[]")
+        entry["participants"] += 1
+        entry["today"] += today in days
+        if member.code == me:
+            entry["mine"] = days
     result = []
     for challenge in CHALLENGES:
-        members = db.query(ChallengeParticipantDB).filter_by(challenge_id=challenge["id"]).all()
-        mine = next((member for member in members if member.code == me), None)
-        done = json.loads(mine.done_days) if mine else []
+        entry = stats.get(challenge["id"], {"participants": 0, "today": 0, "mine": None})
+        done = entry["mine"] or []
         result.append({
             **challenge,
-            "participants": len(members),
-            "done_today_total": sum(1 for member in members if today in json.loads(member.done_days or "[]")),
-            "joined": mine is not None,
+            "participants": entry["participants"],
+            "done_today_total": entry["today"],
+            "joined": entry["mine"] is not None,
             "my_days": len(done),
             "done_today": today in done,
         })
@@ -784,7 +784,7 @@ def social_challenges(data: ChallengeSchema, db: Session = Depends(get_db)):
         "name": row.name, "challenge": titles[row.challenge_id]["title"], "emoji": titles[row.challenge_id]["emoji"],
         "day": len(json.loads(row.done_days or "[]")), "at": row.last_done_at, "mine": row.code == me,
     } for row in feed_rows if row.challenge_id in titles]
-    return {"challenges": result, "feed": feed}
+    return {"challenges": result, "feed": feed, "categories": [{"id": key, "emoji": emoji, "name": name} for key, (emoji, name) in CHALLENGE_CATEGORIES.items()]}
 
 
 @app.post("/community/social/help")
@@ -807,6 +807,12 @@ def social_help(data: HelpSchema, request: Request, db: Session = Depends(get_db
         _advance(help_request, db)
         return {"help": _help_payload(help_request, me)}
 
+    if data.action == "pause":  # a helper chooses how long they do not want to be asked
+        minutes = max(1, min(int(data.pause_minutes or 0), 7 * 24 * 60))
+        profile.helper_cooldown_until = time.time() + minutes * 60
+        db.commit()
+        return {"paused_until": profile.helper_cooldown_until}
+
     help_request = db.query(HelpRequestDB).filter(HelpRequestDB.id == data.id).first()
     if help_request is None or me not in {help_request.seeker, help_request.helper}:
         raise HTTPException(status_code=404, detail="Diese Anfrage gibt es nicht mehr.")
@@ -824,7 +830,8 @@ def social_help(data: HelpSchema, request: Request, db: Session = Depends(get_db
             help_request.session_ends_at = help_request.accepted_at + SESSION_SECONDS
             _add_event(help_request, "Eine Vertrauensperson ist für dich da. Ihr habt 5 Minuten – anonym.", "accepted")
         elif data.decision == "forward":
-            profile.helper_cooldown_until = time.time() + FORWARD_COOLDOWN
+            minutes = max(1, min(int(data.pause_minutes or 60), 7 * 24 * 60))
+            profile.helper_cooldown_until = time.time() + minutes * 60
             help_request.tried = json.dumps(json.loads(help_request.tried or "[]") + [me])
             help_request.status, help_request.helper, help_request.helper_name = "searching", None, None
             _add_event(help_request, "Die Vertrauensperson ist gerade beschäftigt – wir fragen jemand anderen.", "retry")

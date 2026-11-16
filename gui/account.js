@@ -18,8 +18,8 @@ export async function calendarEvents(api, kind) {
     start.setHours(hour || 20, minute || 0, 0, 0);
     if (start < new Date()) start.setTime(start.getTime() + DAY);
     return [{
-      summary: "🌱 Reşo: Dein täglicher Check-in",
-      description: "Wie geht es dir heute? Nimm dir 20 Sekunden für dich in der Reşo-App.",
+      summary: "🌱 Life: Dein täglicher Check-in",
+      description: "Wie geht es dir heute? Nimm dir 20 Sekunden für dich in der Life-App.",
       start: localIso(start), end: localIso(new Date(start.getTime() + 10 * 60000)), timeZone: zone(),
       recurrence: "DAILY", reminderMinutes: 0,
     }];
@@ -30,14 +30,14 @@ export async function calendarEvents(api, kind) {
     return MAJOR_MILESTONES.filter((milestone) => milestone.days > soberDays).slice(0, 6).map((milestone) => {
       const day = new Date(Date.now() + (milestone.days - soberDays) * DAY);
       return {
-        summary: `${milestone.icon} Reşo: ${milestone.label} frei!`,
+        summary: `${milestone.icon} Life: ${milestone.label} frei!`,
         description: "Heute erreichst du einen Meilenstein. Sei stolz auf dich – du hast es verdient.",
         start: isoDate(day), end: isoDate(new Date(day.getTime() + DAY)), timeZone: zone(), reminderMinutes: 540,
       };
     });
   }
   const windows = topWindows(buildRiskModel(analytics), 3);
-  if (!windows.length) throw new Error("Es gibt noch nicht genug Daten für Risikozeiten. Reşo lernt noch.");
+  if (!windows.length) throw new Error("Es gibt noch nicht genug Daten für Risikozeiten. Life lernt noch.");
   return windows.map((window) => {
     const start = new Date();
     const offset = (window.day - ((start.getDay() + 6) % 7) + 7) % 7;
@@ -45,7 +45,7 @@ export async function calendarEvents(api, kind) {
     start.setHours(window.hour, 0, 0, 0);
     if (start < new Date()) start.setDate(start.getDate() + 7);
     return {
-      summary: "🛡️ Reşo: Achtsame Zeit",
+      summary: "🛡️ Life: Achtsame Zeit",
       description: `Zu dieser Zeit wird es für dich oft schwer. Plane jetzt etwas Gutes:\n${prefs.ifThenPlan}`,
       start: localIso(start), end: localIso(new Date(start.getTime() + 3600000)), timeZone: zone(),
       recurrence: "WEEKLY", reminderMinutes: 30,
@@ -109,7 +109,7 @@ export function openAccount({ api, showToast }) {
         <button class="button button-primary button-large google-button" data-action="login" type="button" ${busy || !status.configured ? "disabled" : ""}>
           <span class="google-mark small">G</span> Mit Google anmelden
         </button>
-        <p class="muted small centered">Es öffnet sich dein Browser. Dort meldest du dich bei Google an und erlaubst Reşo den Zugriff auf Backup und Kalender.</p>`}`;
+        <p class="muted small centered">Es öffnet sich dein Browser. Dort meldest du dich bei Google an und erlaubst Life den Zugriff auf Backup und Kalender.</p>`}`;
   };
 
   const load = async () => {

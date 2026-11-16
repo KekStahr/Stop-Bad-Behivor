@@ -51,7 +51,7 @@ let breakReminder = null;
 function showBreak(assessment, { showToast }) {
   const hours = Math.floor(assessment.session / 60);
   const minutes = assessment.session % 60;
-  notify("Reşo · Zeit für eine Pause", "Du sitzt schon lange am Computer. 30 Minuten Pause schützen dich jetzt am besten.");
+  notify("Life · Zeit für eine Pause", "Du sitzt schon lange am Computer. 30 Minuten Pause schützen dich jetzt am besten.");
   const { dialog, close } = openSheet({
     title: "Zeit für eine Pause",
     body: `
@@ -73,7 +73,7 @@ function showBreak(assessment, { showToast }) {
     clearTimeout(breakReminder);
     if (button.dataset.break === "30") {
       showToast("Gute Entscheidung. Ich melde mich in 30 Minuten.");
-      breakReminder = setTimeout(() => notify("Reşo · Pause vorbei", "Schön, dass du dir die Zeit genommen hast. 💚"), 30 * 60000);
+      breakReminder = setTimeout(() => notify("Life · Pause vorbei", "Schön, dass du dir die Zeit genommen hast. 💚"), 30 * 60000);
     } else {
       remember("reso:breakSnooze", String(Date.now() + 30 * 60000));
     }
@@ -98,7 +98,7 @@ async function tick({ api, showToast, goTo }) {
         const key = `${start.toISOString()}`;
         if (level >= 0.5 && start - now <= lead && start.getTime() + HOUR > now && remember("reso:warned") !== key) {
           remember("reso:warned", key);
-          if (prefs.aiNotify) notify("Reşo · Frühwarnung", "Gleich kommt eine Zeit, die für dich oft schwer ist. Halte dich an deinen Plan. 💪");
+          if (prefs.aiNotify) notify("Life · Frühwarnung", "Gleich kommt eine Zeit, die für dich oft schwer ist. Halte dich an deinen Plan. 💪");
           if (prefs.timerSound) chime("message");
           showWarning({ start, label: riskLabel(level) }, goTo);
           break;
@@ -122,7 +122,7 @@ async function tick({ api, showToast, goTo }) {
       const nightKey = `night-${now.toDateString()}`;
       if (now.getHours() === 23 && assessment.reasons.some((reason) => reason.icon === "🌙") && remember("reso:nightWarned") !== nightKey) {
         remember("reso:nightWarned", nightKey);
-        notify("Reşo · Es ist spät", "Nachts wird es für dich oft schwer. Zeit für den Bildschirm-Feierabend? 🌙");
+        notify("Life · Es ist spät", "Nachts wird es für dich oft schwer. Zeit für den Bildschirm-Feierabend? 🌙");
         showToast("Es ist spät – nachts wird es für dich oft schwer. Zeit für Feierabend am Bildschirm? 🌙");
       }
     }
@@ -135,7 +135,7 @@ async function tick({ api, showToast, goTo }) {
       const dashboard = await api("/api/dashboard").catch(() => null);
       remember("reso:checkinReminded", today);
       if (dashboard && !dashboard.todayCheckin) {
-        notify("Reşo · Check-in", "Wie geht es dir heute? Nimm dir 20 Sekunden für dich.");
+        notify("Life · Check-in", "Wie geht es dir heute? Nimm dir 20 Sekunden für dich.");
         openCheckin({ api, showToast });
       }
     }

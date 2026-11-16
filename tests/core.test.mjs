@@ -121,3 +121,13 @@ test("faith data is only stored sealed and never backed up", async () => {
   await core.handle("POST", "/api/faith", { state: null });
   assert.equal(store.data.faith_sealed, undefined);
 });
+
+test("energy saver is on by default and can be switched off", async () => {
+  const store = new MemoryStore();
+  const core = createCore({ store, fetchImpl: async () => ({ ok: true, json: async () => ({}) }) });
+  assert.equal((await core.handle("GET", "/api/settings")).body.energySaver, true);
+  await core.handle("POST", "/api/settings", { energySaver: false });
+  assert.equal(store.data.energy_saver, false);
+  assert.equal((await core.handle("GET", "/api/settings")).body.energySaver, false);
+  assert.equal((await core.handle("POST", "/api/settings", { energySaver: "nein" })).status, 400);
+});

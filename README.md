@@ -1,4 +1,4 @@
-# Reşo – Stop-Bad-Behivor
+# Life – made by Reşo
 
 Desktop-App, die Menschen auf dem Weg aus der Sucht begleitet: Zähler & Meilensteine,
 Hilfe-Fenster mit Atemübung, Frühwarnsystem, Statistik, Community mit Vertrauenspersonen.

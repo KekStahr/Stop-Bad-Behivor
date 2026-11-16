@@ -73,13 +73,19 @@
 }
 
 .room-online {
-  min-width: 20px;
-  padding: 1px 6px;
-  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 0.7rem;
-  font-weight: 700;
-  color: var(--green);
-  background: color-mix(in srgb, var(--green) 14%, transparent);
+  font-weight: 600;
+  color: var(--label-3);
+}
+
+.room-online i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--green);
 }
 
 /* ---- composer extras ---- */
@@ -997,9 +1003,35 @@
   font-size: 0.9rem;
 }
 
+/* round halo behind the hand – the old box-shadow glow drew a square frame around the emoji */
 .intervention-icon {
-  font-size: 2.2rem;
-  animation: hold-glow 2.4s ease-in-out infinite;
+  position: relative;
+  flex: none;
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.intervention-icon::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--orange) 55%, transparent) 0%, transparent 70%);
+  animation: halo 2.4s ease-in-out infinite;
+}
+
+.intervention-hero {
+  isolation: isolate;
+}
+
+@keyframes halo {
+  0%, 100% { transform: scale(0.8); opacity: 0.55; }
+  50% { transform: scale(1.25); opacity: 1; }
 }
 
 .stake-grid {
@@ -1018,8 +1050,13 @@
   background: var(--fill-2);
 }
 
+.stake-grid span {
+  font-size: 1.5rem;
+  line-height: 1.2;
+}
+
 .stake-grid b {
-  font-size: 1.35rem;
+  font-size: 1.25rem;
 }
 
 .stake-grid small {
@@ -1047,11 +1084,107 @@
   color: var(--pink);
 }
 
+.consequence-box,
+.instead-box {
+  margin-top: 16px;
+  padding: 14px 16px 16px;
+  border-radius: 18px;
+}
+
+.consequence-box {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--red) 16%, var(--surface)), color-mix(in srgb, var(--red) 6%, var(--surface)));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--red) 35%, transparent);
+}
+
+.instead-box {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--green) 14%, var(--surface)), color-mix(in srgb, var(--teal) 8%, var(--surface)));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--green) 35%, transparent);
+}
+
+.intervention .consequence-box h4,
+.intervention .instead-box h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+}
+
+.intervention .consequence-box h4 {
+  color: var(--red);
+}
+
+.intervention .instead-box h4 {
+  color: var(--green);
+}
+
 .consequences {
   display: grid;
-  gap: 6px;
+  gap: 8px;
   margin: 0;
-  padding-left: 20px;
+  padding: 0;
+  list-style: none;
+  color: var(--label);
+}
+
+.consequences li {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  line-height: 1.4;
+}
+
+.consequences li span {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  background: color-mix(in srgb, var(--red) 18%, transparent);
+}
+
+.instead-actions {
+  margin-top: 0;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.instead-actions button {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  color: var(--label);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 40%, transparent), 0 2px 10px rgba(0, 0, 0, 0.08);
+}
+
+.instead-actions button:hover {
+  background: color-mix(in srgb, var(--tone) 14%, var(--surface));
+  transform: translateY(-2px);
+}
+
+.instead-actions span {
+  grid-row: span 2;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--tone) 20%, transparent);
+}
+
+.instead-actions small {
+  font-weight: 500;
+  color: var(--label-2);
+}
+
+.instead-tip {
+  margin: 12px 0 0;
+  font-size: 0.86rem;
   color: var(--label-2);
 }
 
@@ -1065,4 +1198,269 @@
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+}
+
+/* ---- early warning card, easier to read ---- */
+.ai-v2 {
+  align-items: start;
+}
+
+.ai-v2 .ai-home-clock {
+  align-self: center;
+}
+
+.ai-main {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ai-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ai-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 14%, transparent);
+}
+
+.ai-status i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tone);
+  animation: risk-pulse 2s ease-in-out infinite;
+}
+
+.ai-v2 h3 {
+  margin: 0;
+  font-size: 1.3rem;
+  line-height: 1.25;
+}
+
+.ai-lead {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--label-2);
+}
+
+.ai-lead strong {
+  color: var(--label);
+}
+
+.ai-blocks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.ai-blocks:empty {
+  display: none;
+}
+
+.ai-block {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--fill-2);
+}
+
+.ai-block small {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--label-3);
+}
+
+.ai-block ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ai-block li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.ai-block li span {
+  flex: none;
+  width: 1.3em;
+  text-align: center;
+}
+
+.ai-windows {
+  display: grid;
+  gap: 6px;
+}
+
+.ai-windows span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.ai-windows i {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 3px;
+  background: var(--tone);
+}
+
+.ai-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.ai-stats div {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px var(--separator);
+}
+
+.ai-stats span {
+  grid-row: span 2;
+  font-size: 1.2rem;
+}
+
+.ai-stats b {
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-stats small {
+  font-size: 0.74rem;
+  color: var(--label-2);
+}
+
+.ai-stats .is-due {
+  background: color-mix(in srgb, var(--orange) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--orange) 45%, transparent);
+}
+
+.ai-v2 .ai-tip {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 0.86rem !important;
+  line-height: 1.4;
+  color: var(--label);
+  background: color-mix(in srgb, var(--yellow, #ffcc00) 12%, transparent);
+}
+
+.ai-v2 .ai-tip[hidden] {
+  display: none;
+}
+
+.offer-choice {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  width: 100%;
+}
+
+.pause-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  width: 100%;
+}
+
+.pause-own {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  width: 100%;
+}
+
+/* ---- challenges: daily pick, tools, long challenges ---- */
+.challenge-daily {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.challenge.is-daily {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--orange) 14%, var(--surface)), var(--surface));
+  box-shadow: var(--shadow), inset 0 0 0 1px color-mix(in srgb, var(--orange) 40%, transparent);
+}
+
+.challenge-section {
+  margin: 22px 4px 10px;
+}
+
+.challenge-tools {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.challenge-tools .search-field {
+  flex: 1;
+  max-width: 420px;
+}
+
+.challenge-cats {
+  margin-bottom: 14px;
+}
+
+.challenge-dots.is-long {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.challenge-bar {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--fill);
+  overflow: hidden;
+}
+
+.challenge-bar i {
+  display: block;
+  height: 100%;
+  width: var(--w);
+  background: linear-gradient(90deg, var(--orange), var(--green));
+}
+
+.button-row.centered {
+  justify-content: center;
+  margin: 14px 0;
+}
+
+.challenge-tools select {
+  flex: none;
+  width: auto;
+  min-width: 170px;
 }

@@ -8,7 +8,7 @@ export async function api(path, options = {}) {
     try {
       result = await desktop.invoke(path, { method, body: options.body });
     } catch {
-      throw new Error("Reşo konnte die Anfrage nicht verarbeiten. Bitte starte die App neu.");
+      throw new Error("Life konnte die Anfrage nicht verarbeiten. Bitte starte die App neu.");
     }
     if (!result || result.status >= 400) throw new Error(result?.body?.error || `Anfrage fehlgeschlagen (${result?.status}).`);
     return result.body;
@@ -23,7 +23,7 @@ export async function api(path, options = {}) {
       body: options.body ? JSON.stringify(options.body) : undefined,
     });
   } catch {
-    throw new Error("Keine Verbindung zum lokalen Reşo-Dienst. Bitte starte die App neu.");
+    throw new Error("Keine Verbindung zum lokalen Life-Dienst. Bitte starte die App neu.");
   }
   let payload;
   try {

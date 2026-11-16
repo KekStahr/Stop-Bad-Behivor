@@ -61,4 +61,22 @@ assert.ok(both.some((event) => event.religion === "islam") && both.some((event) 
 assert.equal(churchSeason(new Date(2025, 2, 10)).name, "Fastenzeit");
 assert.equal(churchSeason(new Date(2025, 11, 1)).name, "Advent");
 assert.ok(Math.abs(qibla(52.52, 13.405) - 136) < 2); // Berlin → about 136° (south-east)
+// content of the "Wege" tools: complete and every reference points to a real chapter/verse
+const content = await import("../gui/faith/content.js");
+const data = await import("../gui/faith/data.js");
+assert.equal(content.ASMA.length, 99);
+assert.equal(content.STEPS.length, 12);
+assert.equal(content.FREEDOM.length, 21);
+const inRange = (target) => (target.surah
+  ? target.surah >= 1 && target.surah <= 114 && (target.ayah || 1) <= data.SURAH_AYAHS[target.surah - 1]
+  : target.book >= 1 && target.book <= 66 && target.chapter <= data.BIBLE_CHAPTERS[target.book - 1]);
+for (const plan of content.PLANS) assert.ok(plan.days.every((day) => inRange(day.target)), plan.id);
+for (const story of content.STORIES.filter((item) => item.target)) assert.ok(inRange(story.target), story.title);
+for (const [, , book, chapter] of content.GOD_NAMES) assert.ok(inRange({ book, chapter }));
+for (const religion of ["christian", "islam"]) {
+  assert.ok(content.STORIES.some((story) => story.religion === religion));
+  assert.ok(content.FAITH_HELP.some((item) => item.religion === religion));
+  assert.ok(content.GUIDES.some((guide) => guide.religion === religion));
+}
+for (const emotion of content.EMOTIONS) for (const theme of emotion.themes) assert.ok(data.VERSES.some((verse) => verse.theme === theme && verse.religion === "islam") && data.VERSES.some((verse) => verse.theme === theme && verse.religion === "christian"), theme);
 console.log("ok");

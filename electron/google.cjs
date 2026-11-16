@@ -11,7 +11,7 @@ const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
 const EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
 
 const base64url = (buffer) => buffer.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-const page = (text) => `<!doctype html><meta charset="utf-8"><title>Reşo</title><body style="font-family:system-ui;background:#111;color:#eee;display:grid;place-items:center;height:90vh"><p>${text}</p></body>`;
+const page = (text) => `<!doctype html><meta charset="utf-8"><title>Life</title><body style="font-family:system-ui;background:#111;color:#eee;display:grid;place-items:center;height:90vh"><p>${text}</p></body>`;
 
 function createGoogle({ store, safeStorage, openExternal }) {
   const config = () => store.data.google_oauth_client || {};
@@ -56,7 +56,7 @@ function createGoogle({ store, safeStorage, openExternal }) {
           response.end();
           return;
         }
-        let message = "Anmeldung erfolgreich. Du kannst dieses Fenster schließen und zu Reşo zurückkehren.";
+        let message = "Anmeldung erfolgreich. Du kannst dieses Fenster schließen und zu Life zurückkehren.";
         let error = null;
         if (url.searchParams.get("state") !== state) error = new Error("OAuth-Prüfung fehlgeschlagen.");
         else if (url.searchParams.get("error")) error = new Error("Google-Anmeldung wurde abgebrochen.");
@@ -125,7 +125,7 @@ function createGoogle({ store, safeStorage, openExternal }) {
       headers: { Authorization: `Bearer ${await accessToken()}`, "Content-Type": "application/json" },
       body: JSON.stringify(event),
     });
-    if (response.status === 403) throw new Error("Reşo hat keinen Zugriff auf deinen Google Kalender. Bitte neu anmelden und den Kalender erlauben.");
+    if (response.status === 403) throw new Error("Life hat keinen Zugriff auf deinen Google Kalender. Bitte neu anmelden und den Kalender erlauben.");
     if (!response.ok) throw new Error(`Kalender-Eintrag fehlgeschlagen (${response.status}).`);
     return (await response.json()).id;
   }
