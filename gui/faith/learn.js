@@ -4,7 +4,9 @@
 import { escapeHtml } from "../api.js";
 import { openSheet } from "../ui.js";
 import { motionLevel } from "../prefs.js";
-import { faith } from "./state.js";
+import { faith, saveFaith } from "./state.js";
+import { FORMULAS, RULING_LABELS, ruling } from "./salah-text.js";
+import { TIMING } from "./salah-timing.js";
 import { fetchScripture } from "./ui.js";
 
 // ---- the figure ----------------------------------------------------------------------------------
@@ -195,6 +197,24 @@ function speak(text, lang, rate = 0.85) {
   });
 }
 
+// Real Arabic recordings of the prayer formulas (not Quran verses, so no reciter has them):
+// Ḥiṣn al-Muslim (hisnmuslim.com) for the supplications, Mishary Alafasy (everyayah.com) for
+// taʿawwudh/basmala, Lingua Libre (CC0) for the takbīr. `end` plays only the formula itself –
+// those files continue with "three times" and the source reference.
+const HISN = (id, end) => ({ url: `https://www.hisnmuslim.com/audio/ar/${id}.mp3`, end });
+const CLIPS = {
+  takbir: [{ url: "https://upload.wikimedia.org/wikipedia/commons/8/8d/LL-Q13955_%28ara%29-Ajron_Bach-Allahu_Akbar_%28noun%29.wav" }],
+  opening: [HISN(28)],
+  refuge: [{ url: "https://everyayah.com/data/Alafasy_128kbps/audhubillah.mp3" }, { url: "https://everyayah.com/data/Alafasy_128kbps/bismillah.mp3" }],
+  basmala: [{ url: "https://everyayah.com/data/Alafasy_128kbps/bismillah.mp3" }],
+  ruku: [HISN(33, 2.0)],
+  rise: [HISN(38, 2.3), HISN(39)],
+  sujud: [HISN(41, 2.1)],
+  jalsa: [HISN(48, 3.5)],
+  tashahhud: [HISN(52)],
+  salawat: [HISN(53)],
+};
+
 // ---- texts ---------------------------------------------------------------------------------------
 const LANGS = [["de", "Deutsch"], ["en", "English"], ["tr", "Türkçe"], ["fr", "Français"]];
 const QURAN_EDITION = { de: "de.bubenheim", en: "en.sahih", tr: "tr.diyanet", fr: "fr.hamidullah" };
@@ -221,18 +241,18 @@ const PRAYER_TYPES = [
   { id: "isha", label: "Ischa – 4 Rakʿāt", rakat: 4 },
 ];
 const SALAH = {
-  opening: { pose: "qiyam", title: "Eröffnungs-Bittgebet (Thanāʾ)", arabic: "سُبْحَانَكَ اللَّهُمَّ وَبِحَمْدِكَ، وَتَبَارَكَ اسْمُكَ، وَتَعَالَى جَدُّكَ، وَلَا إِلَٰهَ غَيْرُكَ", translit: "Subḥānaka llāhumma wa bi-ḥamdika, wa tabāraka smuka, wa taʿālā dschadduka, wa lā ilāha ghairuk.", tr: { de: "Gepriesen seist Du, o Allah, und Dir gebührt das Lob. Gesegnet ist Dein Name, erhaben ist Deine Majestät, und es gibt keinen Gott außer Dir.", en: "Glory be to You, O Allah, and all praise. Blessed is Your name, exalted is Your majesty, and there is no god but You.", tr: "Allah'ım! Seni her türlü eksiklikten tenzih ederim ve Sana hamdederim. Senin adın mübarektir, şanın yücedir. Senden başka ilah yoktur.", fr: "Gloire à Toi, ô Allah, et louange à Toi. Béni soit Ton nom, exaltée soit Ta majesté, et il n'y a de divinité que Toi." }, note: "Nach hanafitischer Praxis – andere Rechtsschulen sprechen hier andere Eröffnungs-Bittgebete." },
-  refuge: { pose: "qiyam", title: "Zuflucht und Basmala", arabic: "أَعُوذُ بِاللَّهِ مِنَ الشَّيْطَانِ الرَّجِيمِ ۝ بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ", translit: "Aʿūdhu billāhi mina sch-schaiṭāni r-radschīm. Bismillāhi r-raḥmāni r-raḥīm.", tr: { de: "Ich suche Zuflucht bei Allah vor dem verfluchten Satan. Im Namen Allahs, des Allerbarmers, des Barmherzigen.", en: "I seek refuge in Allah from the accursed Satan. In the name of Allah, the Most Gracious, the Most Merciful.", tr: "Kovulmuş şeytanın şerrinden Allah'a sığınırım. Rahman ve Rahim olan Allah'ın adıyla.", fr: "Je cherche refuge auprès d'Allah contre Satan le maudit. Au nom d'Allah, le Tout Miséricordieux, le Très Miséricordieux." } },
+  opening: { clip: "opening", pose: "qiyam", title: "Eröffnungs-Bittgebet (Thanāʾ)", arabic: "سُبْحَانَكَ اللَّهُمَّ وَبِحَمْدِكَ، وَتَبَارَكَ اسْمُكَ، وَتَعَالَى جَدُّكَ، وَلَا إِلَٰهَ غَيْرُكَ", translit: "Subḥānaka llāhumma wa bi-ḥamdika, wa tabāraka smuka, wa taʿālā dschadduka, wa lā ilāha ghairuk.", tr: { de: "Gepriesen seist Du, o Allah, und Dir gebührt das Lob. Gesegnet ist Dein Name, erhaben ist Deine Majestät, und es gibt keinen Gott außer Dir.", en: "Glory be to You, O Allah, and all praise. Blessed is Your name, exalted is Your majesty, and there is no god but You.", tr: "Allah'ım! Seni her türlü eksiklikten tenzih ederim ve Sana hamdederim. Senin adın mübarektir, şanın yücedir. Senden başka ilah yoktur.", fr: "Gloire à Toi, ô Allah, et louange à Toi. Béni soit Ton nom, exaltée soit Ta majesté, et il n'y a de divinité que Toi." }, note: "Nach hanafitischer Praxis – andere Rechtsschulen sprechen hier andere Eröffnungs-Bittgebete." },
+  refuge: { clip: "refuge", pose: "qiyam", title: "Zuflucht und Basmala", arabic: "أَعُوذُ بِاللَّهِ مِنَ الشَّيْطَانِ الرَّجِيمِ ۝ بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ", translit: "Aʿūdhu billāhi mina sch-schaiṭāni r-radschīm. Bismillāhi r-raḥmāni r-raḥīm.", tr: { de: "Ich suche Zuflucht bei Allah vor dem verfluchten Satan. Im Namen Allahs, des Allerbarmers, des Barmherzigen.", en: "I seek refuge in Allah from the accursed Satan. In the name of Allah, the Most Gracious, the Most Merciful.", tr: "Kovulmuş şeytanın şerrinden Allah'a sığınırım. Rahman ve Rahim olan Allah'ın adıyla.", fr: "Je cherche refuge auprès d'Allah contre Satan le maudit. Au nom d'Allah, le Tout Miséricordieux, le Très Miséricordieux." } },
   fatiha: { pose: "qiyam", title: "Al-Fātiḥa", surah: 1, translit: "Bismillāhi r-raḥmāni r-raḥīm. Al-ḥamdu lillāhi rabbi l-ʿālamīn. Ar-raḥmāni r-raḥīm. Māliki yaumi d-dīn. Iyyāka naʿbudu wa iyyāka nastaʿīn. Ihdinā ṣ-ṣirāṭa l-mustaqīm. Ṣirāṭa lladhīna anʿamta ʿalaihim, ghairi l-maghḍūbi ʿalaihim wa la ḍ-ḍāllīn. – Āmīn.", note: "Die Fātiḥa wird in jeder Rakʿa rezitiert. Danach leise „Āmīn“." },
   ikhlas: { pose: "qiyam", title: "Eine kurze Sure: Al-Ichlāṣ", surah: 112, translit: "Qul huwa llāhu aḥad. Allāhu ṣ-ṣamad. Lam yalid wa lam yūlad. Wa lam yakun lahū kufuwan aḥad.", note: "In den ersten beiden Rakʿāt folgt nach der Fātiḥa eine weitere Sure – jede kurze Sure ist möglich." },
-  ruku: { pose: "ruku", title: "Rukūʿ – die Verbeugung", arabic: "سُبْحَانَ رَبِّيَ الْعَظِيمِ", translit: "Subḥāna rabbiya l-ʿaẓīm.", repeat: 3, tr: { de: "Gepriesen sei mein Herr, der Gewaltige.", en: "Glory be to my Lord, the Most Great.", tr: "Ulu Rabbimi tesbih ederim.", fr: "Gloire à mon Seigneur, le Très Grand." }, note: "„Allāhu akbar“ sagen und mit geradem Rücken verbeugen, die Hände auf den Knien." },
-  rise: { pose: "stand", title: "Iʿtidāl – Aufrichten", arabic: "سَمِعَ اللَّهُ لِمَنْ حَمِدَهُ ۝ رَبَّنَا وَلَكَ الْحَمْدُ", translit: "Samiʿa llāhu liman ḥamidah. – Rabbanā wa laka l-ḥamd.", tr: { de: "Allah hört den, der Ihn lobt. – Unser Herr, Dir gebührt das Lob.", en: "Allah hears whoever praises Him. – Our Lord, to You belongs all praise.", tr: "Allah kendisine hamdedeni işitir. – Rabbimiz, hamd Sana mahsustur.", fr: "Allah entend celui qui Le loue. – Notre Seigneur, à Toi la louange." } },
-  sujud: { pose: "sujud", title: "Sudschūd – die Niederwerfung", arabic: "سُبْحَانَ رَبِّيَ الْأَعْلَىٰ", translit: "Subḥāna rabbiya l-aʿlā.", repeat: 3, tr: { de: "Gepriesen sei mein Herr, der Höchste.", en: "Glory be to my Lord, the Most High.", tr: "Yüce Rabbimi tesbih ederim.", fr: "Gloire à mon Seigneur, le Très-Haut." }, note: "„Allāhu akbar“ – Stirn, Nase, Hände, Knie und Zehen berühren den Boden. Hier bist du Allah am nächsten." },
-  jalsa: { pose: "sit", title: "Sitzen zwischen den Niederwerfungen", arabic: "رَبِّ اغْفِرْ لِي", translit: "Rabbi ghfir lī.", repeat: 2, tr: { de: "Mein Herr, vergib mir.", en: "My Lord, forgive me.", tr: "Rabbim, beni bağışla.", fr: "Mon Seigneur, pardonne-moi." } },
-  tashahhud: { pose: "tashahhud", title: "Taschahhud – das Glaubenszeugnis", arabic: "التَّحِيَّاتُ لِلَّهِ وَالصَّلَوَاتُ وَالطَّيِّبَاتُ، السَّلَامُ عَلَيْكَ أَيُّهَا النَّبِيُّ وَرَحْمَةُ اللَّهِ وَبَرَكَاتُهُ، السَّلَامُ عَلَيْنَا وَعَلَىٰ عِبَادِ اللَّهِ الصَّالِحِينَ، أَشْهَدُ أَنْ لَا إِلَٰهَ إِلَّا اللَّهُ، وَأَشْهَدُ أَنَّ مُحَمَّدًا عَبْدُهُ وَرَسُولُهُ", translit: "At-taḥiyyātu lillāhi wa ṣ-ṣalawātu wa ṭ-ṭayyibāt. As-salāmu ʿalaika ayyuha n-nabiyyu wa raḥmatu llāhi wa barakātuh. As-salāmu ʿalainā wa ʿalā ʿibādi llāhi ṣ-ṣāliḥīn. Aschhadu an lā ilāha illa llāh, wa aschhadu anna Muḥammadan ʿabduhū wa rasūluh.", tr: { de: "Alle Grüße, Gebete und guten Worte gebühren Allah. Friede sei mit dir, o Prophet, und die Barmherzigkeit Allahs und Sein Segen. Friede sei mit uns und mit den rechtschaffenen Dienern Allahs. Ich bezeuge, dass es keinen Gott gibt außer Allah, und ich bezeuge, dass Muhammad Sein Diener und Gesandter ist.", en: "All greetings, prayers and good words are for Allah. Peace be upon you, O Prophet, and the mercy of Allah and His blessings. Peace be upon us and upon the righteous servants of Allah. I bear witness that there is no god but Allah, and I bear witness that Muhammad is His servant and messenger.", tr: "Bütün dualar, ibadetler ve güzel sözler Allah'a aittir. Ey Peygamber! Allah'ın selamı, rahmeti ve bereketi senin üzerine olsun. Selam bizim üzerimize ve Allah'ın salih kulları üzerine olsun. Şahitlik ederim ki Allah'tan başka ilah yoktur ve yine şahitlik ederim ki Muhammed O'nun kulu ve elçisidir.", fr: "Les salutations, les prières et les bonnes œuvres sont à Allah. Que la paix soit sur toi, ô Prophète, ainsi que la miséricorde d'Allah et Ses bénédictions. Que la paix soit sur nous et sur les pieux serviteurs d'Allah. J'atteste qu'il n'y a de divinité qu'Allah et j'atteste que Muhammad est Son serviteur et Son messager." }, note: "Beim Glaubenszeugnis wird der rechte Zeigefinger angehoben." },
-  salawat: { pose: "sit", title: "Ṣalawāt Ibrāhīmiyya", arabic: "اللَّهُمَّ صَلِّ عَلَىٰ مُحَمَّدٍ وَعَلَىٰ آلِ مُحَمَّدٍ، كَمَا صَلَّيْتَ عَلَىٰ إِبْرَاهِيمَ وَعَلَىٰ آلِ إِبْرَاهِيمَ، إِنَّكَ حَمِيدٌ مَجِيدٌ، اللَّهُمَّ بَارِكْ عَلَىٰ مُحَمَّدٍ وَعَلَىٰ آلِ مُحَمَّدٍ، كَمَا بَارَكْتَ عَلَىٰ إِبْرَاهِيمَ وَعَلَىٰ آلِ إِبْرَاهِيمَ، إِنَّكَ حَمِيدٌ مَجِيدٌ", translit: "Allāhumma ṣalli ʿalā Muḥammadin wa ʿalā āli Muḥammad, kamā ṣallaita ʿalā Ibrāhīma wa ʿalā āli Ibrāhīm, innaka ḥamīdun madschīd. Allāhumma bārik ʿalā Muḥammadin wa ʿalā āli Muḥammad, kamā bārakta ʿalā Ibrāhīma wa ʿalā āli Ibrāhīm, innaka ḥamīdun madschīd.", tr: { de: "O Allah, segne Muhammad und die Familie Muhammads, wie Du Ibrahim und die Familie Ibrahims gesegnet hast. Du bist der Lobenswerte, der Ruhmreiche. O Allah, schenke Muhammad und der Familie Muhammads Gnade, wie Du Ibrahim und der Familie Ibrahims Gnade geschenkt hast. Du bist der Lobenswerte, der Ruhmreiche.", en: "O Allah, send prayers upon Muhammad and the family of Muhammad, as You sent prayers upon Ibrahim and the family of Ibrahim; You are Praiseworthy, Glorious. O Allah, bless Muhammad and the family of Muhammad, as You blessed Ibrahim and the family of Ibrahim; You are Praiseworthy, Glorious.", tr: "Allah'ım! İbrahim'e ve İbrahim'in ailesine rahmet ettiğin gibi Muhammed'e ve Muhammed'in ailesine de rahmet eyle. Şüphesiz Sen övülmeye layıksın, şanı yücesin. Allah'ım! İbrahim'e ve İbrahim'in ailesine bereket verdiğin gibi Muhammed'e ve Muhammed'in ailesine de bereket ver. Şüphesiz Sen övülmeye layıksın, şanı yücesin.", fr: "Ô Allah, prie sur Muhammad et sur la famille de Muhammad comme Tu as prié sur Ibrahim et sur la famille d'Ibrahim ; Tu es certes Digne de louange et de gloire. Ô Allah, bénis Muhammad et la famille de Muhammad comme Tu as béni Ibrahim et la famille d'Ibrahim ; Tu es certes Digne de louange et de gloire." } },
+  ruku: { lead: "takbir", clip: "ruku", pose: "ruku", title: "Rukūʿ – die Verbeugung", arabic: "سُبْحَانَ رَبِّيَ الْعَظِيمِ", translit: "Subḥāna rabbiya l-ʿaẓīm.", repeat: 3, tr: { de: "Gepriesen sei mein Herr, der Gewaltige.", en: "Glory be to my Lord, the Most Great.", tr: "Ulu Rabbimi tesbih ederim.", fr: "Gloire à mon Seigneur, le Très Grand." }, note: "„Allāhu akbar“ sagen und mit geradem Rücken verbeugen, die Hände auf den Knien." },
+  rise: { clip: "rise", pose: "stand", title: "Iʿtidāl – Aufrichten", arabic: "سَمِعَ اللَّهُ لِمَنْ حَمِدَهُ ۝ رَبَّنَا وَلَكَ الْحَمْدُ، حَمْدًا كَثِيرًا طَيِّبًا مُبَارَكًا فِيهِ", translit: "Samiʿa llāhu liman ḥamidah. – Rabbanā wa laka l-ḥamd, ḥamdan kathīran ṭayyiban mubārakan fīh.", tr: { de: "Allah hört den, der Ihn lobt. – Unser Herr, Dir gebührt das Lob: viel Lob, gutes und gesegnetes.", en: "Allah hears whoever praises Him. – Our Lord, to You belongs all praise: abundant, good and blessed praise.", tr: "Allah kendisine hamdedeni işitir. – Rabbimiz, hamd Sana mahsustur; çok, temiz ve bereketli bir hamd.", fr: "Allah entend celui qui Le loue. – Notre Seigneur, à Toi la louange : une louange abondante, bonne et bénie." }, note: "Den zweiten Teil („ḥamdan kathīran …“) kannst du auch weglassen – „Rabbanā wa laka l-ḥamd“ genügt (Buchārī 799)." },
+  sujud: { lead: "takbir", clip: "sujud", pose: "sujud", title: "Sudschūd – die Niederwerfung", arabic: "سُبْحَانَ رَبِّيَ الْأَعْلَىٰ", translit: "Subḥāna rabbiya l-aʿlā.", repeat: 3, tr: { de: "Gepriesen sei mein Herr, der Höchste.", en: "Glory be to my Lord, the Most High.", tr: "Yüce Rabbimi tesbih ederim.", fr: "Gloire à mon Seigneur, le Très-Haut." }, note: "„Allāhu akbar“ – Stirn, Nase, Hände, Knie und Zehen berühren den Boden. Hier bist du Allah am nächsten." },
+  jalsa: { lead: "takbir", clip: "jalsa", clipRepeat: 1, pose: "sit", title: "Sitzen zwischen den Niederwerfungen", arabic: "رَبِّ اغْفِرْ لِي", translit: "Rabbi ghfir lī.", repeat: 2, tr: { de: "Mein Herr, vergib mir.", en: "My Lord, forgive me.", tr: "Rabbim, beni bağışla.", fr: "Mon Seigneur, pardonne-moi." } },
+  tashahhud: { clip: "tashahhud", pose: "tashahhud", title: "Taschahhud – das Glaubenszeugnis", arabic: "التَّحِيَّاتُ لِلَّهِ وَالصَّلَوَاتُ وَالطَّيِّبَاتُ، السَّلَامُ عَلَيْكَ أَيُّهَا النَّبِيُّ وَرَحْمَةُ اللَّهِ وَبَرَكَاتُهُ، السَّلَامُ عَلَيْنَا وَعَلَىٰ عِبَادِ اللَّهِ الصَّالِحِينَ، أَشْهَدُ أَنْ لَا إِلَٰهَ إِلَّا اللَّهُ، وَأَشْهَدُ أَنَّ مُحَمَّدًا عَبْدُهُ وَرَسُولُهُ", translit: "At-taḥiyyātu lillāhi wa ṣ-ṣalawātu wa ṭ-ṭayyibāt. As-salāmu ʿalaika ayyuha n-nabiyyu wa raḥmatu llāhi wa barakātuh. As-salāmu ʿalainā wa ʿalā ʿibādi llāhi ṣ-ṣāliḥīn. Aschhadu an lā ilāha illa llāh, wa aschhadu anna Muḥammadan ʿabduhū wa rasūluh.", tr: { de: "Alle Grüße, Gebete und guten Worte gebühren Allah. Friede sei mit dir, o Prophet, und die Barmherzigkeit Allahs und Sein Segen. Friede sei mit uns und mit den rechtschaffenen Dienern Allahs. Ich bezeuge, dass es keinen Gott gibt außer Allah, und ich bezeuge, dass Muhammad Sein Diener und Gesandter ist.", en: "All greetings, prayers and good words are for Allah. Peace be upon you, O Prophet, and the mercy of Allah and His blessings. Peace be upon us and upon the righteous servants of Allah. I bear witness that there is no god but Allah, and I bear witness that Muhammad is His servant and messenger.", tr: "Bütün dualar, ibadetler ve güzel sözler Allah'a aittir. Ey Peygamber! Allah'ın selamı, rahmeti ve bereketi senin üzerine olsun. Selam bizim üzerimize ve Allah'ın salih kulları üzerine olsun. Şahitlik ederim ki Allah'tan başka ilah yoktur ve yine şahitlik ederim ki Muhammed O'nun kulu ve elçisidir.", fr: "Les salutations, les prières et les bonnes œuvres sont à Allah. Que la paix soit sur toi, ô Prophète, ainsi que la miséricorde d'Allah et Ses bénédictions. Que la paix soit sur nous et sur les pieux serviteurs d'Allah. J'atteste qu'il n'y a de divinité qu'Allah et j'atteste que Muhammad est Son serviteur et Son messager." }, note: "Beim Glaubenszeugnis wird der rechte Zeigefinger angehoben." },
+  salawat: { clip: "salawat", pose: "sit", title: "Ṣalawāt Ibrāhīmiyya", arabic: "اللَّهُمَّ صَلِّ عَلَىٰ مُحَمَّدٍ وَعَلَىٰ آلِ مُحَمَّدٍ، كَمَا صَلَّيْتَ عَلَىٰ إِبْرَاهِيمَ وَعَلَىٰ آلِ إِبْرَاهِيمَ، إِنَّكَ حَمِيدٌ مَجِيدٌ، اللَّهُمَّ بَارِكْ عَلَىٰ مُحَمَّدٍ وَعَلَىٰ آلِ مُحَمَّدٍ، كَمَا بَارَكْتَ عَلَىٰ إِبْرَاهِيمَ وَعَلَىٰ آلِ إِبْرَاهِيمَ، إِنَّكَ حَمِيدٌ مَجِيدٌ", translit: "Allāhumma ṣalli ʿalā Muḥammadin wa ʿalā āli Muḥammad, kamā ṣallaita ʿalā Ibrāhīma wa ʿalā āli Ibrāhīm, innaka ḥamīdun madschīd. Allāhumma bārik ʿalā Muḥammadin wa ʿalā āli Muḥammad, kamā bārakta ʿalā Ibrāhīma wa ʿalā āli Ibrāhīm, innaka ḥamīdun madschīd.", tr: { de: "O Allah, segne Muhammad und die Familie Muhammads, wie Du Ibrahim und die Familie Ibrahims gesegnet hast. Du bist der Lobenswerte, der Ruhmreiche. O Allah, schenke Muhammad und der Familie Muhammads Gnade, wie Du Ibrahim und der Familie Ibrahims Gnade geschenkt hast. Du bist der Lobenswerte, der Ruhmreiche.", en: "O Allah, send prayers upon Muhammad and the family of Muhammad, as You sent prayers upon Ibrahim and the family of Ibrahim; You are Praiseworthy, Glorious. O Allah, bless Muhammad and the family of Muhammad, as You blessed Ibrahim and the family of Ibrahim; You are Praiseworthy, Glorious.", tr: "Allah'ım! İbrahim'e ve İbrahim'in ailesine rahmet ettiğin gibi Muhammed'e ve Muhammed'in ailesine de rahmet eyle. Şüphesiz Sen övülmeye layıksın, şanı yücesin. Allah'ım! İbrahim'e ve İbrahim'in ailesine bereket verdiğin gibi Muhammed'e ve Muhammed'in ailesine de bereket ver. Şüphesiz Sen övülmeye layıksın, şanı yücesin.", fr: "Ô Allah, prie sur Muhammad et sur la famille de Muhammad comme Tu as prié sur Ibrahim et sur la famille d'Ibrahim ; Tu es certes Digne de louange et de gloire. Ô Allah, bénis Muhammad et la famille de Muhammad comme Tu as béni Ibrahim et la famille d'Ibrahim ; Tu es certes Digne de louange et de gloire." } },
 };
-const takbir = (title, pose, note) => ({ pose, title, arabic: "اللَّهُ أَكْبَرُ", translit: "Allāhu akbar.", tr: { de: "Allah ist größer.", en: "Allah is the Greatest.", tr: "Allah en büyüktür.", fr: "Allah est le plus grand." }, note });
+const takbir = (title, pose, note) => ({ clip: "takbir", pose, title, arabic: "اللَّهُ أَكْبَرُ", translit: "Allāhu akbar.", tr: { de: "Allah ist größer.", en: "Allah is the Greatest.", tr: "Allah en büyüktür.", fr: "Allah est le plus grand." }, note });
 const salam = (side) => ({ pose: side === "right" ? "salamR" : "salamL", title: `Friedensgruß nach ${side === "right" ? "rechts" : "links"}`, arabic: "السَّلَامُ عَلَيْكُمْ وَرَحْمَةُ اللَّهِ", translit: "As-salāmu ʿalaikum wa raḥmatu llāh.", tr: { de: "Friede sei mit euch und die Barmherzigkeit Allahs.", en: "Peace be upon you and the mercy of Allah.", tr: "Allah'ın selamı ve rahmeti üzerinize olsun.", fr: "Que la paix et la miséricorde d'Allah soient sur vous." }, note: side === "right" ? "Den Kopf nach rechts drehen." : "Den Kopf nach links drehen – das Gebet ist beendet." });
 
 
@@ -249,34 +269,51 @@ const CROSS = { latin: "In nomine Patris et Filii et Spiritus Sancti. Amen.", gr
 
 
 const NIYYA = { fajr: "Fadschr", dhuhr: "Dhuhr", asr: "Asr", maghrib: "Maghrib", isha: "Ischa" };
+// Quran.com recitation ids (word timings) for the reciter chosen in the settings
+const RECITATION_ID = { "ar.alafasy": 7, "ar.husary": 6, "ar.minshawi": 9, "ar.abdulbasitmurattal": 2, "ar.abdurrahmaansudais": 3 };
 
 function salahSteps(tradition, prayer, suras) {
   const handsDown = tradition === "shia-jafari" || tradition === "sunni-maliki";
-  const qiyamPose = handsDown ? "stand" : tradition === "sunni-hanafi" ? "qiyamNavel" : "qiyamChest";
-  const stand = (step) => (step.pose === "qiyam" ? { ...step, pose: qiyamPose } : step);
-  const sura = (number, rakah) => {
-    const chosen = SHORT_SURAS.find((item) => item.surah === number) || SHORT_SURAS[0];
-    return { ...SALAH.ikhlas, title: `Eine Sure: ${chosen.name}`, surah: chosen.surah, translit: chosen.translit, note: `In den ersten beiden Rakʿāt folgt nach der Fātiḥa eine weitere Sure. Du kannst sie oben auswählen (Rakʿa ${rakah}).` };
-  };
-  const basmala = { ...SALAH.refuge, title: "Basmala", arabic: "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ", translit: "Bismillāhi r-raḥmāni r-raḥīm.", tr: { de: "Im Namen Allahs, des Allerbarmers, des Barmherzigen.", en: "In the name of Allah, the Most Gracious, the Most Merciful.", tr: "Rahman ve Rahim olan Allah'ın adıyla.", fr: "Au nom d'Allah, le Tout Miséricordieux, le Très Miséricordieux." } };
+  const qiyam = handsDown ? "stand" : tradition === "sunni-hanafi" ? "qiyamNavel" : "qiyamChest";
+  const F = (formula, extra) => ({ formula, ...extra });
   const steps = [
-    { pose: "stand", title: "Absicht (Niyya)", text: `Steh zur Qibla gewandt. Fasse im Herzen die Absicht: „Ich bete das ${NIYYA[prayer.id]}-Gebet – ${prayer.rakat} Rakʿāt – für Allah.“`, note: "Die Absicht muss nicht laut gesprochen werden." },
-    takbir("Takbīr – das Gebet beginnt", "takbir", "Ab jetzt gehört deine ganze Aufmerksamkeit dem Gebet."),
-    stand({ ...SALAH.opening, rakah: 1 }),
-    stand({ ...SALAH.refuge, rakah: 1 }),
+    { pose: "stand", title: "Absicht (Niyya)", text: `Steh zur Qibla gewandt. Fasse im Herzen die Absicht: „Ich bete das ${NIYYA[prayer.id]}-Gebet – ${prayer.rakat} Rakʿāt – für Allah.“`, note: "Die Absicht muss nicht laut gesprochen werden.", rulings: ["niyya"] },
+    F("takbir", { pose: "takbir", title: "Takbīr – das Gebet beginnt", note: "Ab jetzt gehört deine ganze Aufmerksamkeit dem Gebet.", rulings: ["takbir_ihram", "raise_hands"] }),
+    F("opening", { pose: qiyam, title: "Eröffnungs-Bittgebet (Thanāʾ)", note: SALAH.opening.note, rulings: ["opening", "hands"], rakah: 1 }),
+    F("refuge", { pose: qiyam, title: "Zuflucht (Taʿawwudh)", note: "Die Basmala („Bismillāhi r-raḥmāni r-raḥīm“) folgt direkt am Anfang der Fātiḥa.", rulings: ["refuge"], rakah: 1 }),
   ];
   for (let rakah = 1; rakah <= prayer.rakat; rakah += 1) {
-    if (rakah > 1) steps.push({ ...takbir(`Aufstehen zur ${rakah}. Rakʿa`, "stand", "Mit „Allāhu akbar“ wieder aufstehen."), rakah });
-    if (rakah > 1) steps.push(stand({ ...basmala, rakah }));
-    steps.push(stand({ ...SALAH.fatiha, rakah }));
-    if (rakah <= 2) steps.push(stand({ ...sura(suras[rakah - 1], rakah), rakah }));
-    else steps.at(-1).note = "In der 3. und 4. Rakʿa wird nur die Fātiḥa rezitiert – keine weitere Sure.";
-    steps.push({ ...SALAH.ruku, rakah }, { ...SALAH.rise, rakah }, { ...SALAH.sujud, rakah }, { ...SALAH.jalsa, rakah }, { ...SALAH.sujud, title: "Zweite Niederwerfung", rakah });
+    if (rakah > 1) {
+      steps.push(F("takbir", { pose: "stand", title: `Aufstehen zur ${rakah}. Rakʿa`, note: "Mit „Allāhu akbar“ wieder aufstehen.", rulings: ["takbir_move"], rakah }));
+    }
+    steps.push({ pose: qiyam, title: "Al-Fātiḥa", surah: 1, rakah, rulings: ["fatiha", "qiyam"], note: rakah > 2 ? "In der 3. und 4. Rakʿa wird nur die Fātiḥa rezitiert – keine weitere Sure. Danach leise „Āmīn“." : "Die Fātiḥa wird in jeder Rakʿa rezitiert. Danach leise „Āmīn“." });
+    if (rakah <= 2) {
+      const chosen = SHORT_SURAS.find((item) => item.surah === suras[rakah - 1]) || SHORT_SURAS[0];
+      steps.push({ pose: qiyam, title: `Eine Sure: ${chosen.name}`, surah: chosen.surah, rakah, rulings: ["sura"], note: `In den ersten beiden Rakʿāt folgt nach der Fātiḥa eine weitere Sure – oben kannst du sie wählen (Rakʿa ${rakah}).` });
+    }
+    steps.push(
+      F("ruku", { pose: "ruku", title: "Rukūʿ – die Verbeugung", repeat: 3, lead: "takbir", note: SALAH.ruku.note, rulings: ["ruku", "ruku_dhikr", "takbir_move"], rakah }),
+      F("rise", { pose: "stand", title: "Iʿtidāl – Aufrichten", note: SALAH.rise.note, rulings: ["rise", "rise_dhikr"], rakah }),
+      F("sujud", { pose: "sujud", title: "Sudschūd – die Niederwerfung", repeat: 3, lead: "takbir", note: SALAH.sujud.note, rulings: ["sujud", "sujud_dhikr", "takbir_move"], rakah }),
+      F("jalsa", { pose: "sit", title: "Sitzen zwischen den Niederwerfungen", lead: "takbir", rulings: ["jalsa", "jalsa_dhikr"], rakah }),
+      F("sujud", { pose: "sujud", title: "Zweite Niederwerfung", repeat: 3, lead: "takbir", note: "Genau wie die erste Niederwerfung.", rulings: ["sujud", "sujud_dhikr"], rakah }),
+    );
     if (rakah === 2 && prayer.rakat > 2) {
-      steps.push({ ...SALAH.tashahhud, title: "Erstes Sitzen – Taschahhud", note: "Nach der 2. Rakʿa nur das Taschahhud sprechen, dann zur nächsten Rakʿa aufstehen. Zeigefinger beim Glaubenszeugnis heben.", rakah });
+      steps.push(
+        F("tashahhud", { pose: "sit", title: "Erstes Sitzen – Taschahhud", note: "Nach der 2. Rakʿa nur das Taschahhud sprechen, dann zur nächsten Rakʿa aufstehen. Der Finger bleibt hier noch unten.", rulings: ["first_tashahhud"], rakah }),
+        F("shahada", { pose: "tashahhud", title: "Erstes Sitzen – Glaubenszeugnis", note: "Erst jetzt, bei „Aschhadu …“, den rechten Zeigefinger heben.", rulings: ["first_tashahhud", "finger"], rakah }),
+      );
     }
   }
-  steps.push({ ...SALAH.tashahhud, title: "Letztes Sitzen – Taschahhud", rakah: prayer.rakat }, { ...SALAH.salawat, rakah: prayer.rakat }, salam("right"), salam("left"));
+  const last = prayer.rakat;
+  steps.push(
+    F("tashahhud", { pose: "sit", title: "Letztes Sitzen – Taschahhud", note: "Bei „At-taḥiyyātu …“ bleibt der Finger noch unten – er wird erst beim Glaubenszeugnis gehoben.", rulings: ["last_sitting", "last_tashahhud"], rakah: last }),
+    F("shahada", { pose: "tashahhud", title: "Glaubenszeugnis – Finger heben", note: "Bei „Aschhadu an lā ilāha illa llāh“ den rechten Zeigefinger heben, die übrigen Finger bleiben geschlossen.", rulings: ["last_tashahhud", "finger"], rakah: last }),
+    F("salawat", { pose: "sit", title: "Ṣalawāt Ibrāhīmiyya", rulings: ["salawat"], rakah: last }),
+    F("protection", { pose: "sit", title: "Bittgebet vor dem Salām", note: "Der Prophet ﷺ lehrte, vor dem Salām Zuflucht vor diesen vier Dingen zu suchen (Muslim 588).", rulings: ["protection"], rakah: last }),
+    F("salam", { pose: "salamR", title: "Friedensgruß nach rechts", note: "Den Kopf nach rechts drehen.", rulings: ["salam_right"] }),
+    F("salam", { pose: "salamL", title: "Friedensgruß nach links", note: "Den Kopf nach links drehen – das Gebet ist beendet.", rulings: ["salam_left"] }),
+  );
   return steps;
 }
 
@@ -296,21 +333,27 @@ export function openLearn(religion) {
   let prayer = PRAYER_TYPES[0];
   let suras = [103, 108]; // the two shortest suras by default – the prayer is learned quickly
   let steps = religion === "islam" ? salahSteps(tradition, prayer, suras) : christianSteps(tradition);
-  const textCache = {};
-  const audioCache = {};
+  const quranCache = {};
   let index = 0;
   let lang = (navigator.language || "de").slice(0, 2);
   if (!LANGS.some(([id]) => id === lang)) lang = "de";
   let original = tradition === "orthodox" ? "greek" : "latin";
   let show = { original: true, translit: true, translation: true };
-  let playing = false;
+  let playing = false; // tutorial runs through by itself
   let sound = true;
+  let rate = 1;
+  let tapMode = "here"; // "here": play on from the word · "word": only this word
+  let loopWord = false;
+  let echo = false; // pause after each phrase so you can repeat it
   let timer;
   let crossTimer;
   let audio = null;
+  let frame = 0;
   let run = 0; // invalidates pending playback when the step changes
+  let media = null; // current step: { clips: [{ url, end, words: [a, b], times }], phrases, words }
 
   const stopSound = () => {
+    cancelAnimationFrame(frame);
     audio?.pause();
     audio = null;
     window.speechSynthesis?.cancel();
@@ -318,19 +361,25 @@ export function openLearn(religion) {
   const { dialog } = openSheet({
     title: religion === "islam" ? "Gebet lernen – die Ṣalāh" : "Gebet lernen – das Vaterunser",
     wide: true,
-    onClose: () => { playing = false; clearTimeout(timer); clearInterval(crossTimer); stopSound(); },
+    onClose: () => { playing = false; run += 1; clearTimeout(timer); clearInterval(crossTimer); stopSound(); },
     body: `
       <div class="learn">
         <div class="learn-stage">
           <div class="learn-pose-name" id="learn-pose-name"></div>
           ${figureSvg(religion === "islam" ? "mat" : "floor")}
+          <div class="learn-cue" id="learn-cue" hidden></div>
           <div class="learn-progress" id="learn-progress"></div>
           <div class="learn-transport">
             <button class="icon-button" id="learn-prev" type="button" aria-label="Zurück" title="Zurück (←)">⏮</button>
-            <button class="learn-play" id="learn-play" type="button" aria-label="Abspielen">▶</button>
+            <button class="learn-play" id="learn-play" type="button" aria-label="Tutorial abspielen" title="Tutorial abspielen (Leertaste)">▶</button>
             <button class="icon-button" id="learn-next" type="button" aria-label="Weiter" title="Weiter (→)">⏭</button>
             <button class="icon-button" id="learn-sound" type="button" aria-label="Ton an/aus" title="Ton an/aus">🔊</button>
           </div>
+          <div class="learn-tools">
+            <label title="Abspielgeschwindigkeit">🐢 <select id="learn-rate"><option value="0.6">0,6×</option><option value="0.8">0,8×</option><option value="1" selected>1×</option><option value="1.2">1,2×</option></select></label>
+            <label title="Nach jedem Satzteil eine Pause zum Nachsprechen"><input type="checkbox" id="learn-echo"> 🎤 Nachsprechen</label>
+          </div>
+          <p class="learn-play-hint">Einmal ▶ drücken – das Tutorial läuft von allein bis zum Ende.</p>
         </div>
         <div class="learn-text">
           <div class="learn-options">
@@ -346,137 +395,334 @@ export function openLearn(religion) {
               <label><input type="checkbox" data-show="translation" checked> Übersetzung</label>
             </span>
           </div>
+          ${religion === "islam" ? `
+            <div class="learn-wordbar">
+              <span>Wort antippen:</span>
+              <label><input type="radio" name="tap" value="here" checked> ab hier abspielen</label>
+              <label><input type="radio" name="tap" value="word"> nur dieses Wort</label>
+              <label><input type="checkbox" id="learn-loop"> 🔁 3× wiederholen</label>
+            </div>` : ""}
           <div id="learn-step" class="learn-step" aria-live="polite"></div>
-          ${religion === "islam" && tradition === "shia-jafari" ? '<p class="muted small">Hinweis: Die Anleitung folgt der verbreiteten sunnitischen Form. In der schiitischen Praxis gibt es Unterschiede (z. B. Hände an den Seiten, Qunūt in der 2. Rakʿa, eigener Wortlaut des Taschahhud, Niederwerfung auf natürlichem Material). Lerne die Details am besten mit deinem Imam.</p>' : religion === "islam" ? '<p class="muted small">Zum Lernen gedacht – Details unterscheiden sich je nach Rechtsschule. Frag im Zweifel deinen Imam.</p>' : ""}
+          ${religion === "islam" ? `<details class="learn-legend"><summary>Was bedeuten Pflicht, Wādschib und Sunnah?</summary>
+            ${Object.values(RULING_LABELS).map((item) => `<p><span class="ruling ${item.tone}">${item.short}</span> ${escapeHtml(item.long.split(" – ")[1] || item.long)}</p>`).join("")}
+            <p>Außerdem gilt für alle Haltungen: <strong>Ruhe (Ṭumaʾnīna)</strong> – in jeder Haltung kurz zur Ruhe kommen, nicht hetzen. Nach den gängigen Positionen der Rechtsschulen; im Zweifel frag deinen Imam.</p></details>` : ""}
+          ${religion === "islam" && tradition === "shia-jafari" ? '<p class="muted small">Hinweis: Die Anleitung folgt der verbreiteten sunnitischen Form. In der schiitischen Praxis gibt es Unterschiede (z. B. Hände an den Seiten, Qunūt in der 2. Rakʿa, eigener Wortlaut des Taschahhud, Niederwerfung auf natürlichem Material). Lerne die Details am besten mit deinem Imam.</p>' : ""}
           <p class="muted small" id="learn-voice-hint" hidden></p>
+          ${religion === "islam" ? '<p class="muted small learn-credits">🎧 Audio: Koran-Rezitation mit Wort-Zeitstempeln von Quran.com (dein gewählter Rezitator), Taʿawwudh von Mishary Alafasy, Takbīr von Lingua Libre (CC0). Für die übrigen Formeln gibt es noch keine geprüfte Aufnahme – dort läuft der Mitlese-Modus.</p>' : ""}
         </div>
       </div>`,
   });
   const svg = dialog.querySelector(".learn-figure");
   const moveTo = animator(svg);
+  const learned = () => new Set(faith().learnedSteps || []);
+  const stepKey = (step) => step.formula || (step.surah ? `surah-${step.surah}` : step.title);
 
-  async function quranText(surah) {
-    const key = `${surah}:${lang}`;
-    if (!textCache[key]) {
-      const result = await fetchScripture("quran", `/v1/surah/${surah}/editions/quran-uthmani,${QURAN_EDITION[lang]}`);
-      const [arabic, translation] = result.data;
-      // the first verse of every sura except 1 carries the basmala in this text – it is shown separately
-      const strip = (text, i) => (surah !== 1 && i === 0 ? text.split(" ").slice(4).join(" ") : text);
-      textCache[key] = { arabic: arabic.ayahs.map((ayah, i) => `${strip(ayah.text, i)} ﴿${ayah.numberInSurah}﴾`).join(" "), translation: translation.ayahs.map((ayah) => ayah.text).join(" ") };
-    }
-    return textCache[key];
+  // ---- media of a step: recordings + word timings ----------------------------------------------
+  function formulaMedia(key) {
+    const formula = FORMULAS[key];
+    return {
+      words: formula.words.map(([ar, lat]) => ({ ar, lat })),
+      phrases: formula.phrases.map(([from, to, tr]) => ({ from, to, text: tr[lang] || tr.de })),
+      clips: formula.clips.map((clip, i) => ({ url: clip.url, end: clip.end, words: clip.words, times: TIMING[key]?.[i] || [] })),
+      cue: formula.cue,
+    };
   }
 
-  // plays the recitation (Quran) or speaks the words; resolves when done
+  async function quranMedia(surah) {
+    const recitation = RECITATION_ID[faith().reciter] || 7;
+    const key = `${surah}:${lang}:${recitation}`;
+    if (!quranCache[key]) {
+      const [rec, verses, translation] = await Promise.all([
+        fetchScripture("qurancom", `/api/v4/chapter_recitations/${recitation}/${surah}?segments=true`),
+        fetchScripture("qurancom", `/api/v4/verses/by_chapter/${surah}?words=true&word_fields=text_uthmani&per_page=50`),
+        fetchScripture("quran", `/v1/surah/${surah}/${QURAN_EDITION[lang]}`),
+      ]);
+      const words = [];
+      const times = [];
+      const phrases = [];
+      verses.verses.forEach((verse, vi) => {
+        const stamp = rec.audio_file.timestamps[vi];
+        const own = verse.words.filter((word) => word.char_type_name === "word");
+        const from = words.length;
+        const segments = new Map((stamp?.segments || []).filter((segment) => segment.length === 3).map(([position, t0, t1]) => [position, [t0 / 1000, t1 / 1000]]));
+        own.forEach((word, wi) => {
+          words.push({ ar: word.text_uthmani || word.text, lat: word.transliteration?.text || "", gloss: word.translation?.text || "" });
+          // fall back to an even split when a word has no segment
+          const span = stamp ? (stamp.timestamp_to - stamp.timestamp_from) / 1000 / own.length : 0;
+          times.push(segments.get(wi + 1) || (stamp ? [stamp.timestamp_from / 1000 + wi * span, stamp.timestamp_from / 1000 + (wi + 1) * span] : [0, 0]));
+        });
+        phrases.push({ from, to: words.length - 1, text: translation.data.ayahs[vi]?.text || "", marker: verse.verse_number });
+      });
+      const lastStamp = rec.audio_file.timestamps.at(-1);
+      quranCache[key] = { words, phrases, clips: [{ url: rec.audio_file.audio_url, start: (rec.audio_file.timestamps[0]?.timestamp_from || 0) / 1000, end: lastStamp ? lastStamp.timestamp_to / 1000 + 0.15 : undefined, words: [0, words.length - 1], times }] };
+    }
+    return quranCache[key];
+  }
+
+  // ---- highlighting --------------------------------------------------------------------------------
+  let lastHighlighted = -1;
+  function highlight(wordIndex) {
+    if (wordIndex === lastHighlighted) return;
+    lastHighlighted = wordIndex;
+    const box = dialog.querySelector("#learn-step");
+    box.querySelectorAll(".lw.is-now").forEach((node) => node.classList.remove("is-now"));
+    box.querySelectorAll(".lp.is-now").forEach((node) => node.classList.remove("is-now"));
+    if (wordIndex < 0 || !media) {
+      box.querySelectorAll(".lw.is-done").forEach((node) => node.classList.remove("is-done"));
+      return;
+    }
+    box.querySelectorAll(`.lw[data-w="${wordIndex}"]`).forEach((node) => node.classList.add("is-now"));
+    const phrase = media.phrases.findIndex((item) => wordIndex >= item.from && wordIndex <= item.to);
+    if (phrase >= 0) box.querySelector(`.lp[data-p="${phrase}"]`)?.classList.add("is-now");
+    box.querySelectorAll(".lw").forEach((node) => node.classList.toggle("is-done", Number(node.dataset.w) < wordIndex));
+    const cue = dialog.querySelector("#learn-cue");
+    const active = media.cue && wordIndex >= media.cue.word && wordIndex < media.cue.word + 6;
+    cue.hidden = !active;
+    if (active) cue.textContent = media.cue.text;
+    svg.classList.toggle("cue-on", Boolean(active));
+  }
+
+  // plays clips of the current media from a word; resolves when done
+  function playFrom(fromWord, { onlyWord = false, token }) {
+    return new Promise((resolve) => {
+      const clipIndex = media.clips.findIndex((clip) => fromWord >= clip.words[0] && fromWord <= clip.words[1]);
+      if (clipIndex < 0) return resolve();
+      const next = async (ci, startWord) => {
+        const clip = media.clips[ci];
+        if (!clip || token !== run) return resolve();
+        const local = startWord - clip.words[0];
+        const startAt = startWord === clip.words[0] && !onlyWord ? clip.start || 0 : Math.max(0, (clip.times[local]?.[0] ?? 0) - 0.05);
+        const stopAt = onlyWord ? (clip.times[local]?.[1] ?? 0) + 0.08 : clip.end;
+        audio = new Audio(clip.url);
+        audio.playbackRate = rate;
+        audio.preservesPitch = true;
+        let echoed = new Set();
+        const finish = () => {
+          cancelAnimationFrame(frame);
+          audio?.pause();
+          if (onlyWord || ci === media.clips.length - 1) resolve();
+          else next(ci + 1, media.clips[ci + 1].words[0]);
+        };
+        const tick = () => {
+          if (token !== run || !audio) return;
+          const t = audio.currentTime;
+          let current = -1;
+          clip.times.forEach(([t0, t1], i) => { if (t >= t0 - 0.03 && t < t1) current = clip.words[0] + i; });
+          if (current >= 0) highlight(current);
+          // "Nachsprechen": pause after each phrase, as long as the phrase took
+          if (echo && !onlyWord) {
+            const phrase = media.phrases.find((item) => item.to >= clip.words[0] && item.to <= clip.words[1] && !echoed.has(item.to) && t >= (clip.times[item.to - clip.words[0]]?.[1] ?? Infinity));
+            if (phrase) {
+              echoed.add(phrase.to);
+              audio.pause();
+              const length = (clip.times[phrase.to - clip.words[0]][1] - (clip.times[Math.max(phrase.from, clip.words[0]) - clip.words[0]]?.[0] ?? 0)) / rate;
+              const cue = dialog.querySelector("#learn-cue");
+              cue.hidden = false;
+              cue.textContent = "🎤 Jetzt du – sprich es nach";
+              setTimeout(() => { if (token === run && audio) { cue.hidden = true; audio.play().catch(finish); frame = requestAnimationFrame(tick); } }, length * 1100 + 600);
+              return;
+            }
+          }
+          if (stopAt && t >= stopAt) return finish();
+          frame = requestAnimationFrame(tick);
+        };
+        audio.addEventListener("ended", finish);
+        audio.addEventListener("error", finish);
+        audio.addEventListener("loadedmetadata", () => { audio.currentTime = startAt; }, { once: true });
+        try {
+          await audio.play();
+          frame = requestAnimationFrame(tick);
+        } catch {
+          finish();
+        }
+        return undefined;
+      };
+      next(clipIndex, fromWord);
+      return undefined;
+    });
+  }
+
+  // a calm speaking pace for read-along: ~0.09 s per letter, at least 0.45 s per word
+  const readTime = (latin) => Math.max(450, latin.replace(/[^a-zA-Zāīūḥḍṣṭẓʿʾ]/g, "").length * 90);
+
+  const playUrl = (url, token) => new Promise((resolve) => {
+    if (token !== run) return resolve();
+    audio = new Audio(url);
+    audio.playbackRate = rate;
+    audio.addEventListener("ended", resolve);
+    audio.addEventListener("error", resolve);
+    audio.play().catch(resolve);
+    return undefined;
+  });
+
   async function playStep(step, token) {
     if (!sound) return;
-    if (step.surah) {
-      try {
-        audioCache[step.surah] ||= (await fetchScripture("quran", `/v1/surah/${step.surah}/${faith().reciter || "ar.alafasy"}`)).data.ayahs.map((ayah) => ayah.audio);
-        for (const url of audioCache[step.surah]) {
+    if (religion !== "islam") {
+      const text = step.line ? step.line.tr[lang] : step.tr?.[lang] || step.text;
+      if (!(await speak(text, lang))) await new Promise((resolve) => { setTimeout(resolve, 2500); });
+      return;
+    }
+    if (!media) return;
+    if (!media.clips.length) {
+      // no verified recording yet: read along – the words light up at a calm speaking pace
+      const repeat = Math.min(step.repeat || 1, 3);
+      for (let i = 0; i < repeat; i += 1) {
+        if (repeat > 1) dialog.querySelector("#learn-repeat").textContent = `${i + 1}. von ${repeat}`;
+        for (let word = 0; word < media.words.length; word += 1) {
           if (token !== run) return;
-          await new Promise((resolve) => {
-            audio = new Audio(url);
-            audio.addEventListener("ended", resolve);
-            audio.addEventListener("error", resolve);
-            audio.play().catch(resolve);
-          });
+          highlight(word);
+          await new Promise((resolve) => { setTimeout(resolve, readTime(media.words[word].lat) / rate); });
+          const phrase = media.phrases.find((item) => item.to === word);
+          if (phrase) await new Promise((resolve) => { setTimeout(resolve, (echo ? 1600 + (phrase.to - phrase.from) * 550 : 350) / rate); });
         }
-      } catch {
-        // offline – continue silently
+        highlight(-1);
+        if (repeat > 1) await new Promise((resolve) => { setTimeout(resolve, 400); });
       }
       return;
     }
+    // the takbīr that leads into the posture is said once, the formula as often as in the prayer
+    if (step.lead) for (const clip of FORMULAS[step.lead].clips) await playUrl(clip.url, token);
     const repeat = Math.min(step.repeat || 1, 3);
     for (let i = 0; i < repeat; i += 1) {
       if (token !== run) return;
-      const said = religion === "islam" && step.arabic ? await speak(step.arabic, "ar", 0.75) : false;
-      if (!said) {
-        const text = step.line ? step.line.tr[lang] : step.tr?.[lang] || step.text;
-        const ok = await speak(text, lang);
-        const hint = dialog.querySelector("#learn-voice-hint");
-        if (religion === "islam" && step.arabic && !hint.textContent) {
-          hint.textContent = "Für die arabische Aussprache fehlt eine arabische Systemstimme – deshalb wird die Übersetzung vorgelesen. Du kannst sie in Windows unter Einstellungen › Zeit und Sprache › Sprache › „Arabisch“ hinzufügen. Die Koran-Rezitation ist immer echt.";
-          hint.hidden = false;
-        }
-        if (!ok) await new Promise((resolve) => { setTimeout(resolve, 2500); });
-      }
+      if (repeat > 1) dialog.querySelector("#learn-repeat").textContent = `${i + 1}. von ${repeat}`;
+      await playFrom(0, { token });
+      highlight(-1);
+      if (repeat > 1) await new Promise((resolve) => { setTimeout(resolve, 300); });
     }
+  }
+
+  // ---- drawing --------------------------------------------------------------------------------------
+  const POSE_NAMES = { stand: "Stehen (Qiyām)", takbir: "Takbīr", qiyamNavel: "Stehen (Qiyām)", qiyamChest: "Stehen (Qiyām)", ruku: "Verbeugung (Rukūʿ)", sujud: "Niederwerfung (Sudschūd)", sit: "Sitzen (Dschalsa)", tashahhud: "Sitzen mit Taschahhud", salamR: "Salām rechts", salamL: "Salām links", folded: "Stehen, Hände gefaltet", bow: "Verneigung", kneel: "Knien", cross1: "Kreuzzeichen" };
+
+  function renderStep(step) {
+    const box = dialog.querySelector("#learn-step");
+    const poseKey = step.pose === "qiyam" ? "qiyamNavel" : step.pose;
+    const focus = FOCUS[step.cross ? "cross1" : poseKey] || [];
+    const done = learned().has(stepKey(step));
+    const rulingsHtml = (step.rulings || []).map((key) => {
+      const value = ruling(key, tradition);
+      const label = RULING_LABELS[value];
+      const names = { niyya: "Absicht", takbir_ihram: "Eröffnungs-Takbīr", raise_hands: "Hände heben", qiyam: "Stehen", hands: "Hände halten", opening: "Eröffnungs-Bittgebet", refuge: "Taʿawwudh", basmala: "Basmala", fatiha: "Fātiḥa", sura: "weitere Sure", takbir_move: "„Allāhu akbar“ beim Wechsel", ruku: "Verbeugung", ruku_dhikr: "Lobpreis im Rukūʿ", rise: "Aufrichten", rise_dhikr: "Worte beim Aufrichten", sujud: "Niederwerfung", sujud_dhikr: "Lobpreis im Sudschūd", jalsa: "Sitzen dazwischen", jalsa_dhikr: "„Rabbi ghfir lī“", first_tashahhud: "Erstes Sitzen mit Taschahhud", last_sitting: "Letztes Sitzen", last_tashahhud: "Taschahhud", salawat: "Ṣalawāt", protection: "Bittgebet", finger: "Zeigefinger heben", salam_right: "Salām rechts", salam_left: "Salām links" };
+      return `<span class="ruling ${label.tone}" title="${escapeHtml(label.long)}"><b>${label.short}</b> ${escapeHtml(names[key] || key)}</span>`;
+    }).join("");
+    let body = "";
+    if (religion === "islam" && media) {
+      const ar = media.words.map((word, i) => `<span class="lw" data-w="${i}">${escapeHtml(word.ar)}</span>${media.phrases.find((p) => p.to === i && p.marker) ? ` <i class="ayah-mark">﴿${media.phrases.find((p) => p.to === i).marker}﴾</i>` : ""}`).join(" ");
+      const lat = media.words.map((word, i) => `<span class="lw" data-w="${i}" title="${escapeHtml(word.gloss || "")}">${escapeHtml(word.lat)}</span>`).join(" ");
+      const tr = media.phrases.map((phrase, k) => `<span class="lp" data-p="${k}">${escapeHtml(phrase.text)}</span>`).join(" ");
+      body = `
+        ${show.original ? `<p class="learn-original is-arabic" dir="rtl" lang="ar">${ar}</p>` : ""}
+        ${show.translit ? `<p class="learn-translit">${lat}</p>` : ""}
+        ${show.translation ? `<p class="learn-translation">${tr}</p>` : ""}`;
+    } else if (step.line) {
+      body = `
+        ${show.original ? `<p class="learn-original" lang="${original === "greek" ? "el" : "la"}">${escapeHtml(step.line[original])}</p>` : ""}
+        ${original === "greek" && show.translit ? `<p class="learn-translit">${escapeHtml(step.line.translit)}</p>` : ""}
+        ${show.translation ? `<p class="learn-translation">${escapeHtml(step.line.tr[lang])}</p>` : ""}`;
+    }
+    box.innerHTML = `
+      <div class="learn-head">${step.rakah ? `<span class="learn-rakah">Rakʿa ${step.rakah} von ${prayer.rakat}</span>` : ""}<span class="learn-repeat" id="learn-repeat"></span><span class="learn-count">Schritt ${index + 1} von ${steps.length}</span></div>
+      <h3>${escapeHtml(step.title)}${step.repeat ? ` <small>× ${step.repeat}</small>` : ""}</h3>
+      ${rulingsHtml ? `<div class="learn-rulings">${rulingsHtml}</div>` : ""}
+      ${focus.length ? `<div class="learn-focus"><strong>Achte auf:</strong><ol>${focus.map(([, text]) => `<li>${escapeHtml(text)}</li>`).join("")}</ol></div>` : ""}
+      ${step.text ? `<p class="learn-plain">${escapeHtml(step.text)}</p>` : ""}
+      ${body}
+      ${step.note ? `<p class="learn-note">💡 ${escapeHtml(step.note)}</p>` : ""}
+      ${religion === "islam" && media && !media.clips.length ? '<p class="learn-readalong">📖 Für diesen Teil gibt es noch keine geprüfte Aufnahme. Lies mit – die Wörter leuchten im ruhigen Sprechtempo auf.</p>' : ""}
+      ${religion === "islam" && (step.formula || step.surah) ? `<button type="button" class="learn-learned ${done ? "is-done" : ""}" id="learn-learned">${done ? "✓ Kann ich auswendig" : "Ich kann das auswendig"}</button>` : ""}`;
+    lastHighlighted = -1;
+    box.querySelector("#learn-learned")?.addEventListener("click", () => {
+      const set = learned();
+      const key = stepKey(step);
+      if (set.has(key)) set.delete(key); else set.add(key);
+      saveFaith({ learnedSteps: [...set] });
+      renderStep(step);
+      drawProgress();
+    });
+  }
+
+  function drawProgress() {
+    const set = learned();
+    dialog.querySelector("#learn-progress").innerHTML = steps.map((item, i) => `<button type="button" class="${i === index ? "is-now" : i < index ? "is-done" : ""} ${item.rakah && item.rakah !== steps[i - 1]?.rakah ? "is-rakah" : ""} ${set.has(stepKey(item)) ? "is-learned" : ""}" data-go="${i}" title="${escapeHtml(item.title)}"></button>`).join("");
+    dialog.querySelectorAll("[data-go]").forEach((button) => button.addEventListener("click", () => { index = Number(button.dataset.go); draw(); }));
   }
 
   async function draw() {
     const token = ++run;
     stopSound();
     clearTimeout(timer);
-    const step = steps[index];
     clearInterval(crossTimer);
+    const step = steps[index];
     if (step.cross) {
       const seq = tradition === "orthodox" ? ["cross1", "cross2", "cross4", "cross3"] : ["cross1", "cross2", "cross3", "cross4"];
       let i = 0;
       moveTo(seq[0]);
       crossTimer = setInterval(() => { i = (i + 1) % (seq.length + 1); moveTo(i === seq.length ? "folded" : seq[i], 600); }, 1000);
     } else moveTo(step.pose);
+    svg.classList.remove("cue-on");
+    dialog.querySelector("#learn-cue").hidden = true;
     const poseKey = step.pose === "qiyam" ? "qiyamNavel" : step.pose;
-    const focus = FOCUS[step.cross ? "cross1" : poseKey] || [];
-    const POSE_NAMES = { stand: "Stehen (Qiyām)", takbir: "Takbīr", qiyamNavel: "Stehen (Qiyām)", qiyamChest: "Stehen (Qiyām)", ruku: "Verbeugung (Rukūʿ)", sujud: "Niederwerfung (Sudschūd)", sit: "Sitzen (Dschalsa)", tashahhud: "Sitzen mit Taschahhud", salamR: "Salām rechts", salamL: "Salām links", folded: "Stehen, Hände gefaltet", bow: "Verneigung", kneel: "Knien", cross1: "Kreuzzeichen" };
     dialog.querySelector("#learn-pose-name").textContent = POSE_NAMES[step.cross ? "cross1" : poseKey] || "";
-    const box = dialog.querySelector("#learn-step");
-    let originalText = step.arabic || "";
-    let translit = step.translit || "";
-    let translation = step.tr ? step.tr[lang] : "";
-    if (step.line) {
-      originalText = step.line[original];
-      translit = original === "greek" ? step.line.translit : "";
-      translation = step.line.tr[lang];
-    }
-    const render = () => {
-      box.innerHTML = `
-        <div class="learn-head">${step.rakah ? `<span class="learn-rakah">Rakʿa ${step.rakah} von ${prayer.rakat}</span>` : ""}<span class="learn-count">Schritt ${index + 1} von ${steps.length}</span></div>
-        <h3>${escapeHtml(step.title)}${step.repeat ? ` <small>× ${step.repeat}</small>` : ""}</h3>
-        ${focus.length ? `<div class="learn-focus"><strong>Achte auf:</strong><ol>${focus.map(([, text]) => `<li>${escapeHtml(text)}</li>`).join("")}</ol></div>` : ""}
-        ${step.text ? `<p class="learn-plain">${escapeHtml(step.text)}</p>` : ""}
-        ${originalText && show.original ? `<p class="learn-original ${religion === "islam" ? "is-arabic" : ""}" ${religion === "islam" ? 'dir="rtl" lang="ar"' : original === "greek" ? 'lang="el"' : 'lang="la"'}>${escapeHtml(originalText)}</p>` : ""}
-        ${translit && show.translit ? `<p class="learn-translit">${escapeHtml(translit)}</p>` : ""}
-        ${translation && show.translation ? `<p class="learn-translation">${escapeHtml(translation)}</p>` : ""}
-        ${step.note ? `<p class="learn-note">💡 ${escapeHtml(step.note)}</p>` : ""}`;
-    };
-    render();
-    dialog.querySelector("#learn-progress").innerHTML = steps.map((item, i) => `<button type="button" class="${i === index ? "is-now" : i < index ? "is-done" : ""} ${item.rakah && item.rakah !== steps[i - 1]?.rakah ? "is-rakah" : ""}" data-go="${i}" title="${escapeHtml(item.title)}"></button>`).join("");
-    dialog.querySelectorAll("[data-go]").forEach((button) => button.addEventListener("click", () => { index = Number(button.dataset.go); draw(); }));
+    media = null;
+    if (religion === "islam" && step.formula) media = formulaMedia(step.formula);
+    renderStep(step);
+    drawProgress();
     dialog.querySelector("#learn-prev").disabled = index === 0;
-    if (step.surah) {
+    if (religion === "islam" && step.surah) {
       try {
-        const text = await quranText(step.surah);
+        const loaded = await quranMedia(step.surah);
         if (token !== run) return;
-        originalText = text.arabic;
-        translation = text.translation;
-        render();
+        media = loaded;
+        renderStep(step);
       } catch {
-        box.insertAdjacentHTML("beforeend", '<p class="muted small">Arabischer Text, Übersetzung und Rezitation brauchen eine Internetverbindung.</p>');
+        dialog.querySelector("#learn-step").insertAdjacentHTML("beforeend", '<p class="muted small">Arabischer Text, Wort-Markierung und Rezitation brauchen eine Internetverbindung.</p>');
       }
     }
     if (!playing) return;
     const started = Date.now();
     await playStep(step, token);
     if (token !== run || !playing) return;
-    // give the posture time even when there is no sound
-    const words = `${originalText} ${translit}`.split(/\s+/).length;
-    const minimum = sound ? 1500 : Math.max(4500, words * 450);
+    const minimum = sound ? 1200 : 5000; // give the posture time even without sound
     timer = setTimeout(() => {
       if (token !== run || !playing) return;
       if (index < steps.length - 1) { index += 1; draw(); } else { playing = false; updatePlay(); }
-    }, Math.max(1200, minimum - (Date.now() - started)));
+    }, Math.max(900, minimum - (Date.now() - started)));
   }
   const updatePlay = () => {
     const button = dialog.querySelector("#learn-play");
     button.textContent = playing ? "⏸" : "▶";
-    button.setAttribute("aria-label", playing ? "Pause" : "Abspielen");
+    button.setAttribute("aria-label", playing ? "Pause" : "Tutorial abspielen");
   };
   const rebuild = () => {
     steps = salahSteps(tradition, prayer, suras);
     index = Math.min(index, steps.length - 1);
     draw();
   };
+
+  // tapping a word: jump there (or play only that word, optionally three times)
+  dialog.querySelector("#learn-step").addEventListener("click", async (event) => {
+    const node = event.target.closest(".lw");
+    if (!node || !media) return;
+    if (!media.clips.length) {
+      highlight(Number(node.dataset.w));
+      return;
+    }
+    const word = Number(node.dataset.w);
+    playing = false;
+    updatePlay();
+    const token = ++run;
+    stopSound();
+    clearTimeout(timer);
+    const times = tapMode === "word" && loopWord ? 3 : 1;
+    for (let i = 0; i < times; i += 1) {
+      if (token !== run) return;
+      highlight(word);
+      await playFrom(word, { onlyWord: tapMode === "word", token });
+      if (times > 1) await new Promise((resolve) => { setTimeout(resolve, 450); });
+    }
+    if (token === run) highlight(-1);
+  });
 
   dialog.querySelector("#learn-prev").addEventListener("click", () => { if (index > 0) { index -= 1; draw(); } });
   dialog.querySelector("#learn-next").addEventListener("click", () => { index = index === steps.length - 1 ? 0 : index + 1; draw(); });
@@ -491,13 +737,17 @@ export function openLearn(religion) {
     event.currentTarget.textContent = sound ? "🔊" : "🔇";
     if (!sound) stopSound();
   });
+  dialog.querySelector("#learn-rate").addEventListener("change", (event) => { rate = Number(event.target.value); if (audio) audio.playbackRate = rate; });
+  dialog.querySelector("#learn-echo").addEventListener("change", (event) => { echo = event.target.checked; });
+  dialog.querySelectorAll('input[name="tap"]').forEach((input) => input.addEventListener("change", () => { tapMode = input.value; }));
+  dialog.querySelector("#learn-loop")?.addEventListener("change", (event) => { loopWord = event.target.checked; });
   dialog.querySelector("#learn-prayer")?.addEventListener("change", (event) => { prayer = PRAYER_TYPES.find((item) => item.id === event.target.value); index = 0; rebuild(); });
   dialog.querySelectorAll("[data-sura]").forEach((select) => select.addEventListener("change", () => { suras[Number(select.dataset.sura)] = Number(select.value); rebuild(); }));
   dialog.querySelector("#learn-lang").addEventListener("change", (event) => { lang = event.target.value; draw(); });
   dialog.querySelector("#learn-original")?.addEventListener("change", (event) => { original = event.target.value; draw(); });
   dialog.querySelectorAll("[data-show]").forEach((input) => input.addEventListener("change", () => { show = { ...show, [input.dataset.show]: input.checked }; draw(); }));
   dialog.addEventListener("keydown", (event) => {
-    if (event.target.closest("select")) return;
+    if (event.target.closest("select, input")) return;
     if (event.key === "ArrowRight") dialog.querySelector("#learn-next").click();
     if (event.key === "ArrowLeft") dialog.querySelector("#learn-prev").click();
     if (event.key === " ") { event.preventDefault(); dialog.querySelector("#learn-play").click(); }

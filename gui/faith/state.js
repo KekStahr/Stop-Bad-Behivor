@@ -61,6 +61,7 @@ export const FAITH_DEFAULTS = {
   deeds: [], // { id, text, at }
   namesLearned: [], // indexes into ASMA / GOD_NAMES, prefixed "i" / "c"
   memorized: [], // verse refs
+  learnedSteps: [], // prayer parts marked as "known by heart" in Gebet lernen
 };
 
 let state = null;

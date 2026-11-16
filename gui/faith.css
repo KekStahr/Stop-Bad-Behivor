@@ -2537,3 +2537,190 @@ dialog.sheet:has(.learn) {
   stroke-width: 6;
   filter: drop-shadow(0 0 4px rgba(255, 211, 107, 0.9));
 }
+
+/* ===== Gebet lernen v3: word-by-word highlighting ===== */
+.learn-original .lw,
+.learn-translit .lw {
+  padding: 0 2px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+
+.learn-original .lw:hover,
+.learn-translit .lw:hover {
+  background: color-mix(in srgb, #ffd36b 22%, transparent);
+}
+
+.learn-original .lw.is-done,
+.learn-translit .lw.is-done {
+  opacity: 0.7;
+}
+
+.learn-original .lw.is-now,
+.learn-translit .lw.is-now {
+  color: #1c1608;
+  background: #ffd36b;
+  opacity: 1;
+  box-shadow: 0 0 0 3px rgba(255, 211, 107, 0.35);
+}
+
+.learn-translation .lp {
+  border-radius: 6px;
+  transition: background 150ms;
+}
+
+.learn-translation .lp.is-now {
+  background: color-mix(in srgb, #ffd36b 28%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, #ffd36b 18%, transparent);
+}
+
+.ayah-mark {
+  font-style: normal;
+  color: #b8860b;
+}
+
+.learn-rulings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ruling {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 4px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  cursor: help;
+  background: var(--fill-2);
+}
+
+.ruling b {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  color: #fff;
+}
+
+.ruling.is-fard b { background: #d64545; }
+.ruling.is-wajib b { background: #d9822b; }
+.ruling.is-sunnah b { background: #2f9e6e; }
+
+.learn-legend {
+  font-size: 0.86rem;
+}
+
+.learn-legend summary {
+  cursor: pointer;
+  color: var(--label-2);
+}
+
+.learn-legend p {
+  margin: 6px 0;
+}
+
+.learn-wordbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 0.84rem;
+  background: var(--fill-2);
+}
+
+.learn-wordbar span {
+  font-weight: 700;
+}
+
+.learn-wordbar label {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.learn-tools {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  font-size: 0.8rem;
+  color: #f7f0de;
+}
+
+.learn-tools label {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.learn-tools select {
+  padding: 2px 6px;
+  font-size: 0.8rem;
+}
+
+.learn-play-hint {
+  margin: 0;
+  text-align: center;
+  font-size: 0.74rem;
+  color: rgba(247, 240, 222, 0.7);
+}
+
+.learn-cue {
+  justify-self: center;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-weight: 700;
+  color: #1c1608;
+  background: #ffd36b;
+  animation: learn-mark-in 300ms var(--smooth) both;
+}
+
+.learn-figure.cue-on [data-limb="finger"] {
+  stroke-width: 8;
+  filter: drop-shadow(0 0 8px #ffd36b);
+}
+
+.learn-repeat {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #b8860b;
+}
+
+.learn-repeat:empty {
+  display: none;
+}
+
+.learn-learned {
+  justify-self: start;
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 999px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--label);
+  background: var(--fill);
+  cursor: pointer;
+}
+
+.learn-learned.is-done {
+  color: #fff;
+  background: var(--green);
+}
+
+.learn-progress button.is-learned {
+  box-shadow: 0 0 0 2px #2f9e6e;
+}
+
+.learn-readalong {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 0.84rem;
+  color: var(--label-2);
+  background: color-mix(in srgb, #5b8def 12%, transparent);
+}

@@ -689,6 +689,7 @@ function createCore({ store, host = {}, fetchImpl = globalThis.fetch, now = () =
   // Scripture texts and place search, fetched here so the page itself never talks to other hosts.
   const SCRIPTURE = {
     quran: { base: "https://api.alquran.cloud", path: /^\/v1\/(surah|ayah)\/\d{1,3}(:\d{1,3})?(\/editions)?\/[a-z0-9.,-]{2,200}$/ },
+    qurancom: { base: "https://api.quran.com", path: /^\/api\/v4\/(chapter_recitations\/\d{1,2}\/\d{1,3}\?segments=true|verses\/by_chapter\/\d{1,3}\?words=true&word_fields=text_uthmani&per_page=50)$/ },
     bible: { base: "https://api.getbible.net", path: /^\/v2\/[a-z0-9]{2,30}\/\d{1,2}\/\d{1,3}\.json$/ },
   };
   const scriptureCache = new Map();
