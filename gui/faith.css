@@ -1,0 +1,1316 @@
+/* ===== Glaube – calm, warm, the same care for both traditions ===== */
+.page-faith {
+  --gold: #c9a24a;
+  --gold-soft: color-mix(in srgb, #c9a24a 18%, transparent);
+  --serif-faith: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  --arabic: "Amiri", "Scheherazade New", "Traditional Arabic", "Arabic Typesetting", "Sakkal Majalla", "Segoe UI", serif;
+}
+
+.faith-page {
+  position: relative;
+  isolation: isolate;
+  min-height: calc(100vh - 80px);
+  margin: -8px -8px 0;
+  padding: 8px 8px 40px;
+}
+
+/* own light/dark, independent of the app theme */
+.faith-page[data-faith-theme="dark"] {
+  --surface: rgba(22, 24, 34, 0.72);
+  --surface-2: rgba(30, 32, 44, 0.8);
+  --fill: rgba(255, 255, 255, 0.12);
+  --fill-2: rgba(255, 255, 255, 0.07);
+  --label: #f5f1e8;
+  --label-2: rgba(245, 241, 232, 0.72);
+  --label-3: rgba(245, 241, 232, 0.45);
+  --separator: rgba(255, 255, 255, 0.12);
+  --shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+  color: var(--label);
+  color-scheme: dark;
+}
+
+.faith-page[data-faith-theme="light"] {
+  --surface: rgba(255, 253, 248, 0.82);
+  --surface-2: rgba(255, 253, 248, 0.92);
+  --label: #2b2418;
+  --label-2: rgba(43, 36, 24, 0.7);
+  --label-3: rgba(43, 36, 24, 0.45);
+  color: var(--label);
+  color-scheme: light;
+}
+
+.faith-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 28px;
+  overflow: hidden;
+  transition: background 600ms var(--smooth);
+}
+
+.faith-backdrop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.12) 100%);
+}
+
+.faith-light {
+  position: absolute;
+  top: -20%;
+  left: 50%;
+  width: 70%;
+  height: 60%;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255, 236, 190, 0.35), transparent);
+  filter: blur(20px);
+  animation: faith-breathe 9s ease-in-out infinite;
+}
+
+@keyframes faith-breathe {
+  0%, 100% { opacity: 0.55; transform: translateX(-50%) scale(1); }
+  50% { opacity: 0.95; transform: translateX(-50%) scale(1.08); }
+}
+
+.faith-backdrop.has-stars::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(1px 1px at 10% 20%, #fff, transparent), radial-gradient(1px 1px at 30% 8%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 55% 25%, #fff, transparent), radial-gradient(1px 1px at 70% 12%, #fff, transparent),
+    radial-gradient(1px 1px at 85% 30%, #fff, transparent), radial-gradient(1.5px 1.5px at 20% 45%, #fff, transparent),
+    radial-gradient(1px 1px at 45% 50%, #fff, transparent), radial-gradient(1px 1px at 90% 55%, #fff, transparent),
+    radial-gradient(1px 1px at 65% 40%, #fff, transparent), radial-gradient(1.5px 1.5px at 5% 65%, #fff, transparent);
+  background-size: 400px 400px;
+  opacity: 0.7;
+  animation: faith-twinkle 6s ease-in-out infinite alternate;
+}
+
+@keyframes faith-twinkle {
+  from { opacity: 0.45; }
+  to { opacity: 0.85; }
+}
+
+.faith-backdrop.pattern-geometry::before,
+.faith-backdrop.pattern-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.35;
+}
+
+.faith-backdrop.pattern-geometry::before {
+  background-image:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'><g fill='none' stroke='%23d8b45e' stroke-width='1'><path d='M40 4 L52 28 L76 40 L52 52 L40 76 L28 52 L4 40 L28 28 Z'/><rect x='22' y='22' width='36' height='36' transform='rotate(45 40 40)'/><rect x='22' y='22' width='36' height='36'/><circle cx='40' cy='40' r='8'/></g></svg>");
+  background-size: 80px 80px;
+}
+
+.faith-backdrop.pattern-glass::before {
+  opacity: 0.55;
+  background:
+    radial-gradient(circle at 50% 30%, rgba(255, 220, 140, 0.45), transparent 35%),
+    conic-gradient(from 0deg at 50% 30%, #3b5bdb55, #c2255c55, #f59f0055, #2f9e4455, #3b5bdb55, #7048e855, #3b5bdb55);
+  mask: radial-gradient(circle at 50% 30%, #000 0 45%, transparent 70%);
+}
+
+.faith-header h1 {
+  font-family: var(--serif-faith);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.faith-header-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.faith-focus button {
+  min-width: 96px;
+}
+
+/* tabs */
+.faith-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 4px 0 18px;
+  padding: 5px;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border-radius: 16px;
+  background: var(--surface);
+  backdrop-filter: blur(18px);
+  box-shadow: var(--shadow);
+}
+
+.faith-tabs button {
+  border: 0;
+  padding: 9px 18px;
+  border-radius: 12px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--label-2);
+  background: transparent;
+  cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+
+.faith-tabs button[aria-selected="true"] {
+  color: var(--label);
+  background: var(--gold-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gold) 40%, transparent);
+}
+
+.page-faith .card {
+  background: var(--surface);
+  backdrop-filter: blur(20px) saturate(1.2);
+}
+
+/* the two badges look exactly alike – only the symbol differs */
+.faith-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 6px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--label);
+  background: var(--gold-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gold) 35%, transparent);
+}
+
+.faith-badge b {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 0.8rem;
+  color: #1c1608;
+  background: var(--gold);
+}
+
+/* verse of the day */
+.verse-day {
+  margin-bottom: 18px;
+}
+
+.verse-day-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.verse-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.verse-day.is-pair .verse-grid {
+  grid-template-columns: 1fr 1fr;
+}
+
+.verse-card {
+  display: grid;
+  gap: 12px;
+  padding: 26px 28px;
+  border-radius: 24px;
+  background: var(--surface);
+  backdrop-filter: blur(22px);
+  box-shadow: var(--shadow);
+  animation: reveal var(--t-slow) var(--smooth) both;
+}
+
+.verse-card header,
+.verse-card footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.verse-theme {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--label-2);
+}
+
+.verse-text {
+  margin: 0;
+  font-family: var(--serif-faith);
+  font-size: calc(var(--faith-font, 19px) * 1.12);
+  line-height: 1.55;
+  color: var(--label);
+}
+
+.verse-text::before { content: "„"; }
+.verse-text::after { content: "“"; }
+
+.verse-arabic {
+  margin: 0;
+  font-family: var(--arabic);
+  font-size: calc(var(--faith-font, 19px) * 1.45);
+  line-height: 1.9;
+  text-align: right;
+}
+
+.verse-source {
+  color: var(--label-3);
+}
+
+.verse-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.icon-button.is-on {
+  color: var(--gold);
+}
+
+/* cards grid */
+.faith-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.faith-card {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.faith-card > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.faith-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.faith-actions.centered {
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.next-prayer {
+  display: grid;
+  gap: 2px;
+}
+
+.next-prayer small {
+  color: var(--label-2);
+}
+
+.next-prayer strong {
+  font-family: var(--serif-faith);
+  font-size: 1.9rem;
+}
+
+.np-time {
+  font-size: 1.2rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.np-left {
+  color: var(--gold);
+  font-weight: 600;
+}
+
+.prayer-strip {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+}
+
+.prayer-strip span {
+  display: grid;
+  justify-items: center;
+  padding: 6px 2px;
+  border-radius: 10px;
+  background: var(--fill-2);
+}
+
+.prayer-strip small {
+  font-size: 0.68rem;
+  color: var(--label-2);
+}
+
+.prayer-strip b {
+  font-size: 0.86rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.prayer-strip .is-past,
+.times-today .is-past {
+  opacity: 0.45;
+}
+
+.season-chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--season) 22%, transparent);
+}
+
+.fasting-card > div {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+}
+
+.craving-card {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--gold) 14%, var(--surface)), var(--surface)) !important;
+}
+
+.tracker-today {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tracker-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px 8px 8px;
+  border: 0;
+  border-radius: 999px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--label);
+  background: var(--fill-2);
+  cursor: pointer;
+  transition: background var(--t-fast), transform var(--t-fast);
+}
+
+.tracker-item span {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--fill);
+}
+
+.tracker-item.is-done {
+  background: color-mix(in srgb, var(--green) 20%, transparent);
+}
+
+.tracker-item.is-done span {
+  color: #fff;
+  background: var(--green);
+}
+
+.tracker-item:active {
+  transform: scale(0.96);
+}
+
+.holiday-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.holiday-row strong,
+.holiday-row small {
+  display: block;
+}
+
+.holiday-row small {
+  color: var(--label-2);
+  font-size: 0.8rem;
+}
+
+.holiday-icon {
+  font-size: 1.4rem;
+}
+
+/* prayer times */
+.times-today {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+}
+
+.times-today > div {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 12px 4px;
+  border-radius: 14px;
+  background: var(--fill-2);
+}
+
+.times-today .is-sun {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--separator);
+}
+
+.times-today b {
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.times-today span {
+  font-size: 0.7rem;
+  color: var(--label-3);
+}
+
+.times-week table {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.86rem;
+}
+
+.times-week th,
+.times-week td {
+  padding: 6px;
+  text-align: center;
+  border-bottom: 0.5px solid var(--separator);
+}
+
+.times-week tbody th {
+  text-align: left;
+  font-weight: 600;
+}
+
+.times-week summary {
+  cursor: pointer;
+  color: var(--label-2);
+}
+
+.tracker-grid {
+  display: grid;
+  grid-template-columns: minmax(90px, auto) repeat(var(--cols), 1fr);
+  gap: 6px;
+  align-items: center;
+  justify-items: center;
+}
+
+.tracker-label {
+  justify-self: start;
+  font-size: 0.86rem;
+}
+
+.tracker-grid small {
+  color: var(--label-3);
+}
+
+.tracker-dot {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--fill);
+  cursor: pointer;
+  transition: background var(--t-fast), transform var(--t-fast);
+}
+
+.tracker-dot.is-done {
+  background: var(--green);
+}
+
+.tracker-dot:hover {
+  transform: scale(1.12);
+}
+
+.qada {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
+.qada span {
+  flex: 1;
+  color: var(--label-2);
+}
+
+.qada b {
+  min-width: 28px;
+  text-align: center;
+}
+
+/* prayers */
+.faith-prayers .chip-row {
+  margin-bottom: 12px;
+}
+
+.prayer-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+}
+
+.prayer-item {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  padding: 20px 22px;
+  border-radius: 20px;
+  background: var(--surface);
+  backdrop-filter: blur(20px);
+  box-shadow: var(--shadow);
+}
+
+.prayer-item h4 {
+  margin: 0;
+  font-family: var(--serif-faith);
+  font-size: 1.15rem;
+}
+
+.prayer-translit {
+  margin: 0;
+  font-style: italic;
+  color: var(--gold);
+}
+
+.prayer-text {
+  margin: 0;
+  font-family: var(--serif-faith);
+  font-size: var(--faith-font, 19px);
+  line-height: 1.6;
+}
+
+.prayer-item footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+
+.prayer-item footer small {
+  color: var(--label-3);
+}
+
+.prayer-sheet {
+  display: grid;
+  gap: 14px;
+}
+
+.prayer-sheet .prayer-item {
+  box-shadow: none;
+  background: var(--fill-2);
+}
+
+/* reader */
+.reader {
+  display: grid;
+  gap: 12px;
+}
+
+.reader-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  padding: 14px 18px;
+}
+
+.reader-field {
+  display: grid;
+  gap: 2px;
+  font-size: 0.75rem;
+  color: var(--label-2);
+}
+
+.reader-field select {
+  max-width: 260px;
+}
+
+.reader-check {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 0.86rem;
+}
+
+.reader-font {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+#reader-play.is-playing {
+  color: var(--gold);
+}
+
+.reader-progress {
+  position: relative;
+  height: 22px;
+  border-radius: 11px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.reader-progress span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--w);
+  background: linear-gradient(90deg, var(--gold-soft), color-mix(in srgb, var(--gold) 45%, transparent));
+}
+
+.reader-progress small {
+  position: relative;
+  display: block;
+  line-height: 22px;
+  padding: 0 12px;
+  font-size: 0.75rem;
+  color: var(--label-2);
+}
+
+.reader-page {
+  max-height: calc(100vh - 330px);
+  min-height: 300px;
+  overflow-y: auto;
+  padding: 26px 34px;
+}
+
+.reader-title {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.reader-title h2 {
+  margin: 0;
+  font-family: var(--serif-faith);
+}
+
+.reader-title span {
+  font-family: var(--arabic);
+  font-size: 1.6rem;
+}
+
+.reader-title small {
+  color: var(--label-3);
+}
+
+.ayah {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: background var(--t-fast);
+}
+
+.ayah:hover {
+  background: var(--fill-2);
+}
+
+.ayah.is-focus,
+.ayah.is-playing {
+  background: var(--gold-soft);
+}
+
+.ayah.is-marked {
+  box-shadow: inset 3px 0 0 var(--gold);
+}
+
+.ayah-arabic {
+  font-family: var(--arabic);
+  font-size: calc(var(--faith-font, 19px) * 1.55);
+  line-height: 2;
+  text-align: right;
+}
+
+.ayah-arabic i {
+  font-style: normal;
+  color: var(--gold);
+}
+
+.ayah-text {
+  font-family: var(--serif-faith);
+  font-size: var(--faith-font, 19px);
+  line-height: 1.65;
+}
+
+.ayah-text b {
+  margin-right: 4px;
+  font-family: var(--font);
+  font-size: 0.7em;
+  color: var(--gold);
+  vertical-align: super;
+}
+
+.reader-nav {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+#reader-done.is-done {
+  color: var(--green);
+}
+
+.reader-marks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.reader-marks h4 {
+  width: 100%;
+  margin: 0 0 4px;
+}
+
+/* calendar */
+.calendar-head {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.calendar-head > div {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+}
+
+.calendar-head strong {
+  font-family: var(--serif-faith);
+  font-size: 1.25rem;
+}
+
+.calendar-head small {
+  color: var(--label-2);
+}
+
+.calendar-month h3 {
+  margin: 20px 4px 8px;
+  font-family: var(--serif-faith);
+  color: var(--label);
+}
+
+.calendar-event {
+  display: grid;
+  grid-template-columns: 52px auto 1fr auto;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 8px;
+  padding: 12px 16px;
+  border-radius: 16px;
+  background: var(--surface);
+  backdrop-filter: blur(18px);
+  box-shadow: var(--shadow);
+}
+
+.calendar-event time {
+  display: grid;
+  justify-items: center;
+}
+
+.calendar-event time b {
+  font-size: 1.4rem;
+}
+
+.calendar-event time small,
+.calendar-event div small {
+  display: block;
+  color: var(--label-2);
+  font-size: 0.8rem;
+}
+
+.calendar-side {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+}
+
+.calendar-side small {
+  color: var(--gold);
+  font-weight: 600;
+}
+
+/* journal */
+.journal-compose {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.journal-prompt {
+  font-family: var(--serif-faith);
+  font-size: 1.2rem;
+}
+
+.journal-compose textarea {
+  width: 100%;
+  resize: vertical;
+  padding: 14px;
+  border: 0;
+  border-radius: 14px;
+  font: inherit;
+  font-family: var(--serif-faith);
+  font-size: 1.05rem;
+  color: var(--label);
+  background: var(--fill-2);
+}
+
+.journal-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.journal-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.journal-entry {
+  display: grid;
+  gap: 8px;
+  padding: 16px 20px;
+  border-radius: 18px;
+  background: var(--surface);
+  backdrop-filter: blur(18px);
+  box-shadow: var(--shadow);
+}
+
+.journal-entry header,
+.journal-entry footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.journal-entry header time {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--label-3);
+}
+
+.journal-entry footer {
+  justify-content: space-between;
+}
+
+.journal-entry p {
+  margin: 0;
+  font-family: var(--serif-faith);
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+
+.journal-entry.is-answered {
+  box-shadow: var(--shadow), inset 3px 0 0 var(--green);
+}
+
+.link-button.danger {
+  color: var(--red);
+}
+
+.journal-stats,
+.journal-empty {
+  text-align: center;
+}
+
+/* setup + lock */
+.faith-setup,
+.faith-lock {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  max-width: 760px;
+  margin: 30px auto;
+  text-align: center;
+}
+
+.faith-setup h1,
+.faith-lock h1 {
+  margin: 0;
+  font-family: var(--serif-faith);
+  font-size: 3rem;
+}
+
+.faith-setup-glow {
+  position: absolute;
+  top: -60px;
+  width: 420px;
+  height: 260px;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--gold-soft), transparent);
+  animation: faith-breathe 9s ease-in-out infinite;
+}
+
+.faith-setup-lead {
+  max-width: 560px;
+  font-size: 1.08rem;
+  color: var(--label-2);
+}
+
+.faith-choice {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  width: 100%;
+}
+
+.faith-option {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 26px 20px 20px;
+  border: 0;
+  border-radius: 24px;
+  font: inherit;
+  color: var(--label);
+  background: var(--surface);
+  box-shadow: var(--shadow), inset 0 0 0 1px var(--separator);
+  cursor: pointer;
+  transition: transform var(--t) var(--smooth), box-shadow var(--t);
+}
+
+.faith-option:hover {
+  transform: translateY(-3px);
+}
+
+.faith-option.is-selected {
+  box-shadow: var(--shadow), inset 0 0 0 2px var(--gold);
+  background: linear-gradient(180deg, var(--gold-soft), var(--surface));
+}
+
+.faith-symbol {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  font-size: 2rem;
+  color: #1c1608;
+  background: var(--gold);
+}
+
+.faith-option strong {
+  font-size: 1.25rem;
+}
+
+.faith-option small {
+  color: var(--label-2);
+}
+
+.faith-option select {
+  margin-top: 6px;
+  max-width: 100%;
+}
+
+.faith-privacy {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  max-width: 560px;
+  padding: 12px 16px;
+  border-radius: 16px;
+  text-align: left;
+  background: var(--fill-2);
+}
+
+.faith-lock-icon {
+  font-size: 3rem;
+}
+
+.faith-lock form {
+  display: flex;
+  gap: 8px;
+}
+
+.faith-lock input {
+  width: 160px;
+  text-align: center;
+  font-size: 1.4rem;
+  letter-spacing: 0.3em;
+}
+
+/* sheets: place, adjust, counter, stillness */
+.place-search {
+  display: flex;
+  gap: 8px;
+}
+
+.place-search input {
+  flex: 1;
+}
+
+.place-results {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.place-result {
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 12px;
+  font: inherit;
+  text-align: left;
+  color: var(--label);
+  background: var(--fill-2);
+  cursor: pointer;
+}
+
+.place-result:hover {
+  background: var(--accent-soft);
+}
+
+.place-result small {
+  color: var(--label-2);
+}
+
+.place-manual {
+  margin: 10px 0;
+}
+
+.place-manual summary {
+  cursor: pointer;
+  color: var(--label-2);
+}
+
+.place-grid,
+.adjust-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 10px 0;
+}
+
+.place-grid label,
+.adjust-grid label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.82rem;
+  color: var(--label-2);
+}
+
+.adjust-grid label {
+  grid-template-columns: 1fr 80px auto;
+  align-items: center;
+  color: var(--label);
+}
+
+.faith-current-place {
+  margin: 0 0 10px;
+}
+
+.counter {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.counter-bead {
+  position: relative;
+  width: 200px;
+  height: 200px;
+  display: grid;
+  place-content: center;
+  border: 0;
+  border-radius: 50%;
+  color: var(--label);
+  background:
+    radial-gradient(closest-side, var(--surface) 82%, transparent 83% 100%),
+    conic-gradient(var(--gold, #c9a24a) var(--p, 0%), var(--fill) 0);
+  cursor: pointer;
+  user-select: none;
+  transition: transform 120ms var(--spring);
+}
+
+.counter-bead:active {
+  transform: scale(0.95);
+}
+
+.counter-number {
+  font-size: 3.2rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.counter-of {
+  color: var(--label-2);
+}
+
+.counter-phrase {
+  font-size: 1.3rem;
+}
+
+.counter-steps {
+  display: flex;
+  gap: 6px;
+}
+
+.counter-steps i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--fill);
+}
+
+.counter-steps i.is-done {
+  background: var(--green);
+}
+
+.counter-steps i.is-now {
+  background: #c9a24a;
+}
+
+.stillness {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  text-align: center;
+}
+
+.stillness-orb {
+  width: 180px;
+  height: 180px;
+  display: grid;
+  place-items: center;
+}
+
+.stillness-orb span {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 228, 160, 0.95), rgba(201, 162, 74, 0.35) 60%, transparent 72%);
+  animation: still-breath 10s ease-in-out infinite;
+}
+
+.stillness-orb.is-static span {
+  animation: none;
+}
+
+@keyframes still-breath {
+  0%, 100% { transform: scale(0.55); }
+  40% { transform: scale(1); }
+  55% { transform: scale(1); }
+}
+
+.stillness-phrase {
+  min-height: 2.6em;
+  margin: 0;
+  font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  font-size: 1.35rem;
+  transition: opacity 400ms;
+}
+
+.stillness-phrase.is-changing {
+  opacity: 0;
+}
+
+/* overview card + sidebar */
+.faith-home {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 16px;
+  background: linear-gradient(120deg, color-mix(in srgb, #c9a24a 16%, var(--surface)), var(--surface));
+}
+
+.faith-home[hidden] {
+  display: none;
+}
+
+.faith-home-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  font-size: 1.4rem;
+  color: #1c1608;
+  background: #c9a24a;
+}
+
+.faith-home strong,
+.faith-home small {
+  display: block;
+}
+
+.faith-home small {
+  color: var(--label-2);
+}
+
+.faith-home-times {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.sidebar-quote.is-verse blockquote {
+  font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+}
+
+@media (max-width: 900px) {
+  .verse-day.is-pair .verse-grid,
+  .faith-choice {
+    grid-template-columns: 1fr;
+  }
+
+  .times-today,
+  .prayer-strip {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+:root[data-motion="off"] .faith-light,
+:root[data-motion="off"] .faith-backdrop::before,
+:root[data-motion="off"] .stillness-orb span {
+  animation: none;
+}
+
+.wide-chips button {
+  width: auto;
+  padding: 0 12px;
+}
+
+.intervention-verse {
+  margin: 12px 0 0;
+  padding: 12px 16px;
+  border-left: 3px solid #c9a24a;
+  border-radius: 12px;
+  font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  background: color-mix(in srgb, #c9a24a 12%, var(--surface));
+}
+
+.intervention-verse span {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--font);
+  font-size: 0.78rem;
+  color: var(--label-2);
+}

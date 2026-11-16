@@ -1,137 +1,91 @@
-# Stop-Bad-Behivor
-This is a program that is very effective at stopping you from engaging in bad habits.
+# Reşo – Stop-Bad-Behivor
 
-## Electron-Web-App
+Desktop-App, die Menschen auf dem Weg aus der Sucht begleitet: Zähler & Meilensteine,
+Hilfe-Fenster mit Atemübung, Frühwarnsystem, Statistik, Community mit Vertrauenspersonen.
 
-Die Anwendung wird als Electron-Web-App gestartet. Die Oberfläche liegt
-thematisch sortiert in `gui/`; das lokale Python-Backend in `backend/` läuft
-ausschließlich im Hintergrund, damit Timer, Systemüberwachung, Tray und
-Hotkeys weiter funktionieren. Zum Starten wird nicht `python main.py`, sondern
-`npm start` verwendet. Die Backend-Module und die Electron-Oberfläche sind
-nach Bereichen getrennt (`backend/core/`, `backend/ui/`,
-`backend/integrations/`, `backend/community/` und `gui/pages/`).
+## Aufbau
 
-Für die Entwicklung Node.js sowie einmalig die Python-Abhängigkeiten des
-Hintergrund-Backends installieren:
+- `electron/` – Desktop-Hülle (Node): Datenspeicher (`store.cjs`), lokales API
+  (`core.cjs`), Tastatur-Erkennung (`monitor.cjs`), Google-Anmeldung (`google.cjs`),
+  Fenster, Infobereich, Autostart (`main.cjs`).
+- `gui/` – Oberfläche (HTML/CSS/JS), spricht per IPC mit `electron/`.
+- `server/` – Community- und Backup-Server (FastAPI, läuft auf Render).
+
+Es gibt keinen Python-Teil mehr auf dem Desktop. Die Daten liegen in
+`%APPDATA%/reso-desktop/stats_data.json` (installierte Version: `%APPDATA%/Reşo`; gleiches Format wie früher, bestehender
+Fortschritt bleibt erhalten).
 
 ```powershell
-pip install -r backend/requirements.txt
 npm install
-npm start
+npm start      # App starten
+npm test       # Tests der lokalen Logik
+python tests/test_social.py   # Server-Tests (benötigt server/requirements.txt)
+npm run build  # Windows-Installer nach dist/
 ```
 
-`npm start` öffnet nur die Electron-Web-App und startet den lokalen
-Python-Dienst automatisch im Hintergrund. Falls Python nicht im PATH liegt,
-kann der Interpreter über `RESO_PYTHON` angegeben werden. Für den
-Windows-Installer PyInstaller installieren und anschließend `npm run build`
-ausführen:
+`RESO_SERVER_URL` verbindet die App mit einem anderen Server (z. B. lokal
+`http://127.0.0.1:8000`), `RESO_USER_DATA` startet eine getrennte Test-Instanz
+mit eigenem Datenordner.
 
-```powershell
-pip install pyinstaller
-npm run build
-```
+## Infobereich, Beenden und Autostart
 
-Nach dem Build wird der Installer unter `dist/` erzeugt; er enthält das
-Backend, sodass Python für die Installation und den normalen App-Start nicht
-separat gestartet werden muss. Fortschrittsdaten werden im
-Electron-Benutzerverzeichnis gespeichert; beim ersten Entwicklungsstart werden
-bisherige Daten aus `backend/data/stats_data.json` dorthin kopiert. Das lokale
-API-Backend bindet ausschließlich an `127.0.0.1` und verlangt ein zufälliges
-Token pro Start.
+Das X schließt nur das Fenster; Reşo läuft unten rechts im Infobereich weiter und
+schützt weiter. Beenden geht über Rechtsklick auf das Symbol → „Beenden …“: Dann
+läuft ein 30-Minuten-Countdown (abbrechbar über das Symbol oder das Banner in der
+App). Beim Herunterfahren von Windows beendet sich Reşo sofort. Reşo startet
+standardmäßig mit Windows (Einstellungen → Daten & System).
 
-## Tray and shutdown countdown
+## Tastatur-Erkennung
 
-Closing the main window minimizes the app to the system tray. Choosing
-**Beenden (30 Min. Wartezeit)** in the tray starts a 30-minute countdown; the app
-stays active in the background and closes when the countdown ends. The deadline
-is saved locally, so the remaining time resumes if the app is restarted before
-the countdown expires. The countdown is shown on the Home tab and can be
-cancelled there; the app remains usable while it runs. Windows or a user with
-access to the local app data can still terminate or modify the app or change
-the system clock; this is not an operating-system-enforced lock.
+`monitor.cjs` nutzt das native Modul `uiohook-napi`, um Trigger-Wörter und sehr
+schnelles Tippen zu erkennen. Nur die letzten 50 Zeichen bleiben im Speicher; nichts
+wird gespeichert oder versendet. Bei einem Trigger öffnet sich das Hilfe-Fenster,
+optional werden Browser geschlossen (Einstellung, standardmäßig aus). Bei hektischem
+Tippen erscheint „Kurz innehalten“ (`gui/pause.html`).
 
-## Home screen
+## Community
 
-The Home tab shows the saved community display name when available, the current
-rank, a flame streak badge, and a live sobriety timer with days, hours, minutes,
-and seconds. Its progress bars animate as the timer advances. Quick actions,
-savings rings, a savings goal, the monthly challenge, and a daily quote are
-available on the same screen. The savings rings compare money with the savings
-goal and recovered focus time with 24 hours. Tab navigation remains at the
-bottom of the app.
+Gruppen pro Sucht, Freunde & Direktnachrichten, Bilder/GIFs (max. 500 KB), Emojis,
+Reaktionen, Links nur mit Warnung und Rückfrage, Melden & Blockieren, gemeinsame
+Challenges. Vertrauenspersonen: Wer in den Einstellungen „Ich bin
+Vertrauensperson“ aktiviert (optional mit Tagen/Uhrzeiten), bekommt Hilfe-Anfragen
+als eigenes Fenster und kann helfen oder weitersenden (danach 1 Stunde Ruhe). Antwortet
+niemand innerhalb von 45 Sekunden, wird automatisch die nächste Person gefragt.
+Meldungen landen in der Tabelle `community_reports` – eine Moderationsoberfläche gibt
+es noch nicht.
 
-## Google Cloud Backup
+## Community auf Render aktualisieren
 
-The desktop app uses Google's installed-application OAuth flow with PKCE. Create
-an OAuth client of type **Desktop app** in Google Cloud Console and set its
-client ID in `GOOGLE_OAUTH_CLIENT_ID` before starting the app. If Google
-provides a client secret for that desktop client, set it as
-`GOOGLE_OAUTH_CLIENT_SECRET` as well. Desktop OAuth client secrets are not
-confidential; never reuse a web-server client secret here. On Windows, for
-example, set the client ID for the current PowerShell session with
-`$env:GOOGLE_OAUTH_CLIENT_ID = "your-desktop-client-id"`.
+Render baut den Dienst aus dem GitHub-Repository. Neue Server-Endpunkte
+(`/community/social/*`) sind erst nach einem Deploy erreichbar:
 
-Install the desktop requirements with `pip install -r backend/requirements.txt`.
-Deploy the FastAPI app with `server` as the service root, install
-`server/requirements.txt`, and start it with
-`uvicorn main:app --host 0.0.0.0 --port $PORT`. Configure `DATABASE_URL` for
-the deployment. The desktop currently targets the Reşo API URL defined in
-`backend/core/stats.py`; set `RESO_CLOUD_URL` to the deployed server's `/sync` endpoint if it
-differs. Deploy the updated server before using cloud backup.
+1. Änderungen committen und nach GitHub pushen (`git push origin main`).
+2. Im Render-Dashboard den Dienst „Stop-Bad-Behivor“ öffnen. Ist *Auto-Deploy*
+   aktiv, startet der Deploy automatisch – sonst **Manual Deploy → Deploy latest
+   commit**.
+3. Prüfen: Root Directory `server`, Build Command `pip install -r requirements.txt`,
+   Start Command `uvicorn main:app --host 0.0.0.0 --port $PORT`, Umgebungsvariable
+   `DATABASE_URL` zeigt auf `reso-db`. Die neuen Tabellen legt der Server beim Start
+   selbst an.
+4. Test im Browser: `https://<dein-dienst>.onrender.com/docs` muss
+   `/community/social/sync` auflisten.
 
-After Google sign-in, choose either **Jetzt sichern** or
-**Aus Cloud wiederherstellen**. Restore replaces local progress and preferences,
-so the app asks for confirmation first. PINs and Discord webhook URLs remain
-local and are excluded by both client and server. The refresh token is stored
-in the operating system keyring. Once a backup has been initialized, later
-local changes are uploaded automatically; offline failures are logged and can
-be retried with **Jetzt sichern**. Reframing/emotion history and trigger
-timestamps remain local because they can contain sensitive personal data.
-Google sign-in uses the `openid`, `email`, and `profile` scopes to associate an
-account with the Reşo backup service; it does not request Google Drive access.
-If the desktop OAuth client ID is missing, **Mit Google verbinden** opens the
-Google Cloud Console so the client can be created. Set
-`GOOGLE_OAUTH_CLIENT_ID` and restart Reşo; connecting then opens Google's
-sign-in and consent page.
+Hinweis: Im kostenlosen Render-Tarif schläft der Dienst nach Inaktivität ein; die
+erste Anfrage kann dann bis zu einer Minute dauern.
 
-## Anonymous support chat
+## Google-Konto, Kalender und Frühwarnsystem
 
-The optional support chat matches one seeker with one helper over the FastAPI
-WebSocket endpoint. Deploy the updated server and its `server/requirements.txt`
-with Uvicorn's WebSocket support enabled; the desktop derives the `ws`/`wss`
-URL from `RESO_CLOUD_URL`. The chat is in-memory and single-process: messages,
-rooms, and the waiting queue are not persisted, and running multiple server
-workers does not share matches. Chat starts only after the user confirms in the
-window. The desktop establishes an ephemeral X25519 key agreement and encrypts
-profile data, text, stickers, and PNG/JPEG images with AES-GCM before sending
-them. The server only validates and relays public keys and opaque ciphertext;
-it rejects plaintext chat payloads. Encryption keys are ephemeral and are not
-stored. Participants are anonymous but not verified; no account identity is
-sent, while streak and rank are shared as profile information after encryption.
-These values are not independently verified.
+Ein Klick auf den Namen unten links (oder Einstellungen → Konto) öffnet die
+Google-Anmeldung im Browser. Ist noch keine Client-ID gesetzt, zeigt das
+Konto-Fenster eine Schritt-für-Schritt-Einrichtung; die eingetragene Client-ID
+(Typ „Desktop-App“) wird lokal gespeichert und nicht synchronisiert. Reşo fragt dabei zusätzlich den Bereich
+`calendar.events` an, um Check-in-, Meilenstein- und Risikozeiten-Termine
+einzutragen. Dieser Bereich gilt bei Google als „sensibel“: Solange die
+OAuth-App nicht von Google verifiziert ist, können sich nur eingetragene
+Testnutzer anmelden. Notfallkontakt, Auslöser-Muster und Reflexionen werden nie
+synchronisiert.
 
-The server can see connection metadata and public keys. Compare the displayed
-security fingerprint with the partner over a separate trusted channel: without
-that check, an actively malicious relay could replace public keys during the
-initial exchange. The chat is not a crisis or professional support service; do
-not share identifying or contact information. Messages are not persisted by the
-chat service. Message size, queue size, and per-connection send rate are
-limited.
-
-## Community forum
-
-The Community tab is a public pseudonymous forum. Posts and comments are stored
-by the configured community API and are visible to other app users. It supports
-text, PNG/JPEG images and GIF files up to 500 KB, comments, stickers and emoji
-reactions. The app creates a local pseudonymous identity; forum names are not
-verified accounts, and anyone with access to the API can post. The forum has no
-moderation tools yet. Do not share personal or sensitive information. Deploy
-the updated `server` API to enable the forum. Animated GIF previews are shown
-in the desktop feed.
-
-## Analytics models
-
-The Analytics tab includes focus-time equivalents (estimated pages, kilometers,
-and books) and a hyperbolic discounting curve. These are illustrative
-calculations based on configurable example assumptions, not measured outcomes
-or clinical assessments.
+Das Frühwarnsystem (`gui/insights.js`) ist ein lokales statistisches Modell: Es
+lernt aus erkannten Auslösern, „Welle überstanden“-Einträgen und Check-ins, zu
+welchen Wochentagen/Uhrzeiten es schwer wird, und meldet sich vorher. Es läuft,
+solange Reşo im Infobereich aktiv ist. Test: `node tests/test_insights.mjs`.

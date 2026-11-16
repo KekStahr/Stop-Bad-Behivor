@@ -4,6 +4,7 @@ import json
 import time
 import base64
 import binascii
+import hashlib
 from collections import deque
 from typing import Any, Dict, Optional
 import requests
@@ -116,6 +117,7 @@ async def limit_forum_request_size(request: Request, call_next):
     if (
         request.url.path.startswith("/community/forum/")
         or request.url.path == "/community/forum"
+        or request.url.path.startswith("/community/social/")
     ):
         content_length = request.headers.get("content-length")
         if content_length:
@@ -803,3 +805,6 @@ async def support_chat_websocket(websocket: WebSocket, role: str):
             await chat_manager.relay_packet(websocket, outgoing)
     except WebSocketDisconnect:
         await chat_manager.disconnect(websocket)
+
+
+import social  # noqa: E402,F401  (registers the /community/social/* routes)

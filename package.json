@@ -3,13 +3,13 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Reşo desktop web app",
+  "description": "Reşo – Begleiter auf dem Weg aus der Sucht (Desktop-App)",
   "main": "electron/main.cjs",
   "scripts": {
     "start": "electron .",
-    "check": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check gui/app.js && node --check gui/api.js && node --check gui/pages/home.js && node --check gui/pages/timer.js && node --check gui/pages/stats.js && node --check gui/pages/settings.js && node --check gui/pages/community.js",
-    "build:backend": "python -m PyInstaller --noconfirm --clean --distpath electron/backend --workpath build/backend backend/reso-backend.spec",
-    "build": "npm run build:backend && electron-builder"
+    "check": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/core.cjs && node --check electron/store.cjs && node --check electron/google.cjs && node --check electron/monitor.cjs && node --check gui/app.js && node --check gui/api.js && node --check gui/pages/home.js && node --check gui/pages/timer.js && node --check gui/pages/stats.js && node --check gui/pages/settings.js && node --check gui/pages/community.js && node --check gui/prefs.js && node --check gui/ui.js && node --check gui/sos.js && node --check gui/recovery.js && node --check gui/insights.js && node --check gui/flows.js && node --check gui/palette.js && node --check gui/account.js && node --check gui/companion.js && node --check gui/progress.js && node --check gui/sidebar.js && node --check gui/wave.js && node --check gui/calm.js && node --check gui/help.js && node --check gui/pause.js && node --check gui/intervention.js && node --check gui/pages/crisis.js && node --check gui/pages/faith.js && node --check gui/faith/calc.js && node --check gui/faith/data.js && node --check gui/faith/state.js && node --check gui/faith/ui.js && node --check gui/faith/reader.js && node --check gui/faith/reminders.js && node --check electron/seal.cjs",
+    "test": "node --test tests/core.test.mjs && node tests/test_insights.mjs && node tests/test_faith.mjs",
+    "build": "electron-builder"
   },
   "devDependencies": {
     "electron": "^45.3.0",
@@ -28,27 +28,29 @@
     "productName": "Reşo",
     "files": [
       "electron/**/*",
-      "!electron/backend/**",
       "gui/**/*",
       "package.json"
     ],
-    "extraResources": [
-      {
-        "from": "electron/backend/reso-backend",
-        "to": "backend",
-        "filter": ["**/*"]
-      }
-    ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "electron/assets/icon.ico"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
-    }
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "electron/assets/icon.ico",
+      "uninstallerIcon": "electron/assets/icon.ico",
+      "shortcutName": "Reşo"
+    },
+    "asarUnpack": [
+      "node_modules/uiohook-napi/**"
+    ]
   },
   "allowScripts": {
     "electron@39.8.10": true,
     "electron-winstaller@5.4.0": true
+  },
+  "dependencies": {
+    "uiohook-napi": "^1.5.5"
   }
 }

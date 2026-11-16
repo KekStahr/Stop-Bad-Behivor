@@ -3,52 +3,85 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="color-scheme" content="dark">
+    <meta name="color-scheme" content="light dark">
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; connect-src http://127.0.0.1:*; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self';"
+      content="default-src 'self'; connect-src 'self' http://127.0.0.1:*; img-src 'self' data:; media-src https://cdn.islamic.network https://everyayah.com; style-src 'self' 'unsafe-inline'; script-src 'self';"
     >
     <title>Reşo — You vs You</title>
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="features.css">
+    <link rel="stylesheet" href="delight.css">
+    <link rel="stylesheet" href="community.css">
+    <link rel="stylesheet" href="faith.css">
     <script type="module" src="app.js"></script>
   </head>
   <body>
     <div class="app-shell">
-      <aside class="channel-sidebar">
-        <div class="workspace-title">
-          <div>
-            <span class="eyebrow">DEIN WORKSPACE</span>
-            <h1>Reşo</h1>
+      <aside class="sidebar" aria-label="Hauptnavigation">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">R</div>
+          <div class="brand-copy">
+            <strong>Reşo</strong>
+            <span>You vs You</span>
           </div>
-          <span class="online-dot" title="Lokal verbunden"></span>
         </div>
-        <div class="section-label">DEIN ALLTAG</div>
-        <nav class="channel-list" aria-label="Navigation">
-          <button class="nav-link is-active" data-page="home"><span>⌂</span> Übersicht</button>
-          <button class="nav-link" data-page="timer"><span>◷</span> Fokus & Pausen</button>
-          <button class="nav-link" data-page="community"><span>◎</span> Community</button>
-          <button class="nav-link" data-page="stats"><span>▥</span> Analytics</button>
+
+        <nav class="nav" id="nav">
+          <span class="nav-indicator" aria-hidden="true"></span>
+          <button class="nav-link" data-page="home" title="Übersicht">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 10.5 12 3.8l8.5 6.7V20a1 1 0 0 1-1 1h-5v-6h-5v6h-5a1 1 0 0 1-1-1z"/></svg>
+            <span>Übersicht</span>
+          </button>
+          <button class="nav-link" data-page="timer" title="Fokus">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9.5 2.5h5"/></svg>
+            <span>Fokus</span>
+          </button>
+          <button class="nav-link" data-page="community" title="Community">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z"/></svg>
+            <span>Community</span>
+          </button>
+          <button class="nav-link" data-page="stats" title="Statistik">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+            <span>Statistik</span>
+          </button>
+          <button class="nav-link" data-page="faith" title="Glaube" id="nav-faith">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c.6 2.6 2.4 4.4 5 5-2.6.6-4.4 2.4-5 5-.6-2.6-2.4-4.4-5-5 2.6-.6 4.4-2.4 5-5Z"/><path d="M5 21c1.5-3 4-4.5 7-4.5s5.5 1.5 7 4.5"/></svg>
+            <span>Glaube</span>
+          </button>
+          <button class="nav-link" data-page="settings" title="Einstellungen">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+            <span>Einstellungen</span>
+          </button>
         </nav>
-        <div class="sidebar-card">
-          <span class="eyebrow">DEIN MOTTO</span>
-          <p>Ein Schritt nach dem anderen. Du bist auf deinem Weg.</p>
-        </div>
-        <button class="nav-link settings-link" data-page="settings"><span>⚙</span> Einstellungen</button>
-        <div class="profile-bar">
-          <div class="avatar-small">R</div>
+
+        <button class="sidebar-why" id="sidebar-why" type="button" title="Mein Warum bearbeiten">
+          <span class="sidebar-why-label"><span aria-hidden="true">♥</span> Mein Warum</span>
+          <span class="sidebar-why-text" id="sidebar-why-text"></span>
+        </button>
+        <figure class="sidebar-quote" id="sidebar-quote">
+          <figcaption class="sidebar-quote-label"><span aria-hidden="true">❝</span> <span id="sidebar-quote-kind">Zitat</span> <button class="sidebar-quote-next" id="sidebar-quote-next" type="button" title="Neues Zitat" aria-label="Neues Zitat">↻</button></figcaption>
+          <blockquote id="sidebar-quote-text"></blockquote>
+          <cite id="sidebar-quote-author"></cite>
+        </figure>
+
+        <button class="sos-button" id="sos-button" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="m5.6 5.6 3.6 3.6m5.6 5.6 3.6 3.6m0-12.8-3.6 3.6m-5.6 5.6-3.6 3.6"/></svg>
+          <span>Ich brauche Hilfe</span>
+        </button>
+
+        <button class="profile" id="profile-button" type="button" title="Konto & Synchronisierung">
+          <div class="avatar" id="sidebar-avatar">R</div>
           <div class="profile-copy">
-            <strong id="sidebar-name">Dein Fortschritt</strong>
-            <span>Lokal auf diesem Gerät</span>
+            <strong id="sidebar-name">Dein Weg</strong>
+            <span id="connection-status">Mit Google anmelden</span>
           </div>
-          <span class="online-dot"></span>
-        </div>
+          <svg class="profile-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+        </button>
       </aside>
 
-      <main class="main-panel">
-        <header class="topbar">
-          <div class="topbar-actions"><button class="text-button" id="classic-view">Klassische Ansicht</button></div>
-        </header>
-        <section id="page-content" class="page-content" aria-live="polite"></section>
+      <main class="main" id="main">
+        <section id="page-content" class="page" aria-live="polite"></section>
       </main>
     </div>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>

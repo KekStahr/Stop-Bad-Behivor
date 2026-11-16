@@ -1,11 +1,10 @@
-const { contextBridge } = require("electron");
-
-function argumentValue(prefix) {
-  const argument = process.argv.find((value) => value.startsWith(prefix));
-  return argument ? argument.slice(prefix.length) : "";
-}
+const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("resoDesktop", {
-  apiUrl: argumentValue("--reso-api-url="),
-  apiToken: argumentValue("--reso-api-token="),
+  invoke: (path, { method = "GET", body } = {}) => ipcRenderer.invoke("api", { method, path, body }),
+  onEvent: (callback) => {
+    const listener = (_event, message) => callback(message);
+    ipcRenderer.on("reso-event", listener);
+    return () => ipcRenderer.removeListener("reso-event", listener);
+  },
 });

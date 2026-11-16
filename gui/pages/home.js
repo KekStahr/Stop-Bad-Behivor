@@ -1,183 +1,439 @@
-import { escapeHtml, formatEuro } from "../api.js";
+import { escapeHtml } from "../api.js";
+import { faith, loadFaith, activeReligions, prayerConfig } from "../faith/state.js";
+import { verseOfDay } from "../faith/data.js";
+import { nextPrayer, formatClock } from "../faith/calc.js";
+import { prefs, setPref, formatMoney } from "../prefs.js";
+import { ring, setRing, confirmSheet, openSheet, formatNumber } from "../ui.js";
+import { ADDICTIONS, MILESTONES, MAJOR_MILESTONES, benefitTimeline, nextMilestone, soberSeconds, splitDuration, humanDuration } from "../recovery.js";
+import { buildRiskModel, upcomingRisk, hourProfile, riskClock, riskLabel, topWindows, assessNow } from "../insights.js";
+import { openCheckin, openReflection, celebrateMilestone, pendingMilestone, confetti } from "../flows.js";
+import { computeXp, levelFor, dailyQuests, checkinStreak, dayKey } from "../progress.js";
+import { showWarning } from "../companion.js";
 
-function getTrackerUnits(elapsed) {
-  const definitions = [
-    { key: "years", singular: "Jahr", plural: "Jahre", seconds: 365 * 86400 },
-    { key: "months", singular: "Monat", plural: "Monate", seconds: 30 * 86400 },
-    { key: "weeks", singular: "Woche", plural: "Wochen", seconds: 7 * 86400 },
-    { key: "days", singular: "Tag", plural: "Tage", seconds: 86400 },
-    { key: "hours", singular: "Stunde", plural: "Stunden", seconds: 3600, range: 24 },
-    { key: "minutes", singular: "Minute", plural: "Minuten", seconds: 60, range: 60 },
-    { key: "seconds", singular: "Sekunde", plural: "Sekunden", seconds: 1, range: 60 },
-  ];
-  let remaining = Math.max(0, Math.floor(elapsed));
+const DAY = 86400;
+const MOODS = ["😣", "😕", "😐", "🙂", "😄"];
 
-  return definitions.map((definition) => {
-    const value = Math.floor(remaining / definition.seconds);
-    remaining %= definition.seconds;
-    return {
-      ...definition,
-      value,
-      label: value === 1 ? definition.singular : definition.plural,
-      width: definition.range ? (value / definition.range) * 100 : 100,
-    };
+function greeting() {
+  const hour = new Date().getHours();
+  if (hour < 5) return "Gute Nacht";
+  if (hour < 11) return "Guten Morgen";
+  if (hour < 18) return "Hallo";
+  return "Guten Abend";
+}
+
+const plural = (value, singular, pluralLabel) => `${value} ${value === 1 ? singular : pluralLabel}`;
+const shortDate = (date) => new Intl.DateTimeFormat("de-DE", { day: "numeric", month: "short", year: "numeric" }).format(date);
+
+export function openAchievements(soberDays) {
+  const reached = MILESTONES.filter((milestone) => soberDays >= milestone.days);
+  const upcoming = MILESTONES.filter((milestone) => soberDays < milestone.days).slice(0, 8);
+  openSheet({
+    title: "Deine Meilensteine",
+    wide: true,
+    body: `
+      <div class="achievement-summary">
+        <div>${ring({ size: 88, stroke: 9, progress: reached.length / MILESTONES.length, color: "var(--orange)" })}<b>${reached.length}</b></div>
+        <p class="sheet-text">Du hast <strong>${reached.length} von ${MILESTONES.length}</strong> Meilensteinen erreicht. Am Anfang gibt es fast jeden Tag einen – weil jeder einzelne Tag zählt.</p>
+      </div>
+      <span class="eyebrow">Als Nächstes</span>
+      <div class="milestone-row">${upcoming.map((milestone) => `
+        <div class="chip-badge ${milestone.major ? "is-major" : ""}"><span>${milestone.icon}</span><strong>${milestone.label}</strong>
+          <small>${shortDate(new Date(Date.now() + (milestone.days - soberDays) * DAY * 1000))}</small></div>`).join("")}</div>
+      <span class="eyebrow">Große Etappen</span>
+      <div class="achievement-grid">
+        ${MAJOR_MILESTONES.map((milestone, index) => {
+          const done = soberDays >= milestone.days;
+          const progress = Math.min(1, soberDays / milestone.days);
+          return `
+            <article class="achievement ${done ? "is-unlocked" : ""}" style="--n:${index}">
+              <span class="achievement-icon">${milestone.icon}</span>
+              <strong>${milestone.label}</strong>
+              <small>${done ? "Erreicht" : `${Math.round(progress * 100)} %`}</small>
+              <div class="progress"><span style="--w:${progress * 100}%"></span></div>
+            </article>`;
+        }).join("")}
+      </div>`,
   });
 }
 
-export async function render(root, { api, showToast, refresh }) {
-  const data = await api("/api/dashboard");
-  const timer = data.timer;
-  const streak = data.streakTime;
-  let elapsed = ((streak.years || 0) * 365 + (streak.months || 0) * 30 + (streak.weeks || 0) * 7 + (streak.days || 0)) * 86400
-    + (streak.hours || 0) * 3600 + (streak.minutes || 0) * 60 + (streak.seconds || 0);
-  const initialTrackerUnits = getTrackerUnits(elapsed);
-  const unlockedBadges = data.badges.filter((badge) => badge.unlocked).length;
-  const displayName = data.name.trim() || "Dein Fortschritt";
+export async function render(root, { api, showToast, refresh, goTo }) {
+  const [data, analytics] = await Promise.all([api("/api/dashboard"), api("/api/analytics")]);
+  const name = (data.name || "").trim();
+  const addiction = ADDICTIONS[prefs.addiction] || ADDICTIONS.general;
+  const hasStart = Boolean(data.streakStart);
+  const dailyExpense = Number(data.dailyExpense) || 0;
+  const dailyHours = Number(prefs.dailyHours) || 0;
+  const goal = data.savingsGoal;
 
-  const sidebarName = document.querySelector("#sidebar-name");
-  if (sidebarName) sidebarName.textContent = displayName;
+  document.querySelector("#sidebar-name").textContent = name || "Dein Weg";
+  document.querySelector("#sidebar-avatar").textContent = (name || "R")[0].toUpperCase();
+
+  const seconds = soberSeconds(data.streakStart);
+  const soberDays = seconds / DAY;
+  const moneySaved = soberDays * dailyExpense;
+  const timeSaved = soberDays * dailyHours + (Number(data.savedHours) || 0);
+  const reached = MILESTONES.filter((milestone) => soberDays >= milestone.days).length;
+  const dateLabel = new Intl.DateTimeFormat("de-DE", { weekday: "long", day: "numeric", month: "long" }).format(new Date());
+  const checkin = data.todayCheckin;
+  const week = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date();
+    date.setDate(date.getDate() - (6 - index));
+    return { label: new Intl.DateTimeFormat("de-DE", { weekday: "narrow" }).format(date), entry: analytics.checkins?.[dayKey(date)] };
+  });
+  const model = buildRiskModel(analytics);
+  const profile = hourProfile(model);
+  const nowHour = new Date().getHours();
+  const nextRisk = upcomingRisk(model, 24, 0.5);
+  const assessment = assessNow(analytics);
+  const nowLabel = assessment.score > profile[nowHour] ? assessment.label : riskLabel(profile[nowHour]);
+  const usage = analytics.usage || {};
+  const pcLabel = (minutes) => (minutes >= 60 ? `${Math.floor(minutes / 60)} Std. ${minutes % 60} Min.` : `${minutes} Min.`);
+  const soon = nextRisk && nextRisk.offset <= 3;
+  const riskHour = nextRisk?.at.getHours();
+  // Personal proof: waves already beaten around that time of day.
+  const wavesAtThatTime = nextRisk ? (analytics.waves || []).filter((wave) => wave.status === "survived"
+    && Math.abs(new Date(wave.start).getHours() - riskHour) <= 1).length : 0;
+  const whenLabel = nextRisk
+    ? `${nextRisk.at.toDateString() === new Date().toDateString() ? "heute" : "morgen"} ${riskHour}–${(riskHour + 1) % 24} Uhr`
+    : "";
+  const xp = computeXp(analytics);
+  const level = levelFor(xp.total);
+  const quests = dailyQuests(analytics);
+  const questsDone = quests.filter((quest) => quest.done).length;
+  const streak = checkinStreak(analytics.checkins);
+  const benefit = benefitTimeline(prefs.addiction).find((item) => item.days > soberDays);
+  const yearDays = soberDays + 365;
+  const readyCapsule = (analytics.capsules || []).find((capsule) => capsule.ready && !capsule.opened);
 
   root.innerHTML = `
-    <div class="welcome-row">
+    <header class="page-header reveal">
       <div>
-        <span class="eyebrow">SCHÖN, DASS DU DA BIST</span>
-        <h2>Weiter so${data.name ? `, ${escapeHtml(data.name)}` : ""}.</h2>
-        <p class="muted">${escapeHtml(data.rank)}</p>
+        <span class="eyebrow">${escapeHtml(dateLabel)}</span>
+        <h1>${prefs.greeting ? `${greeting()}${name ? `, ${escapeHtml(name)}` : ""}` : "Übersicht"}</h1>
+        <p class="subtitle">${escapeHtml(addiction.emoji)} Level ${level.level} · ${escapeHtml(level.title)}</p>
       </div>
-      <button class="achievement-launcher" id="open-achievements" type="button" aria-haspopup="dialog" aria-controls="achievement-dialog">
-        <span class="achievement-launcher-icon" aria-hidden="true">🏆</span>
-        <span class="achievement-launcher-copy">
-          <strong>Erfolge</strong>
-          <small>${unlockedBadges} von ${data.badges.length} erreicht</small>
-        </span>
-        <span class="achievement-launcher-arrow" aria-hidden="true">↗</span>
-      </button>
-    </div>
+      <div class="header-actions">
+        <button class="pill-button subtle" id="open-palette" type="button" title="Befehle suchen">⌕ Suchen <kbd>Strg K</kbd></button>
+        <button class="pill-button" id="open-achievements" type="button"><span aria-hidden="true">🏆</span> ${reached} / ${MILESTONES.length}</button>
+      </div>
+    </header>
 
-    <dialog class="achievement-dialog" id="achievement-dialog" aria-labelledby="achievement-dialog-title">
-      <div class="achievement-dialog-content">
-        <div class="achievement-dialog-header">
-          <div>
-            <span class="eyebrow">DEINE MEILENSTEINE</span>
-            <h3 id="achievement-dialog-title">Alle Erfolge</h3>
-          </div>
-          <button class="achievement-close" id="close-achievements" type="button" aria-label="Fenster schließen">×</button>
-        </div>
-        <p class="muted">Dein Fortschritt auf dem Weg – jeder Meilenstein zählt.</p>
-        <div class="achievement-grid">
-          ${data.badges.map((badge) => `
-            <article class="achievement-card ${badge.unlocked ? "is-unlocked" : "is-locked"}">
-              <span class="achievement-icon" aria-hidden="true">${escapeHtml(badge.icon || "🏅")}</span>
-              <div class="achievement-copy">
-                <strong>${escapeHtml(badge.name)}</strong>
-                <small>${escapeHtml(badge.desc)}</small>
-                <span class="achievement-state">${badge.unlocked ? "Erreicht" : "Noch offen"}</span>
-              </div>
-            </article>
-          `).join("")}
-        </div>
-      </div>
-    </dialog>
-
-    <section class="hero-card">
-      <div class="hero-top">
-        <div><span class="eyebrow">DEIN WEG</span><h3>Ein Tag nach dem anderen.</h3></div>
-        <span class="status-chip"><i></i> Dein Fortschritt</span>
-      </div>
-      <div class="streak-tracker is-loading" role="timer" aria-label="Zeit seit Beginn">
-        ${initialTrackerUnits.map((unit) => `
-          <div class="tracker-row tracker-row-${unit.key}" data-tracker-unit="${unit.key}"${unit.value === 0 && unit.key !== "seconds" ? " hidden" : ""}>
-            <span class="tracker-fill" style="--tracker-width: ${unit.width}%"></span>
-            <strong class="tracker-value">${unit.value} ${unit.label}</strong>
-          </div>
-        `).join("")}
-      </div>
-      <div class="tracker-actions">
-        <button class="tracker-action tracker-action-primary" data-go="timer">
-          <span aria-hidden="true">◷</span>${timer.running ? "Fokus läuft" : "Fokus starten"}
-        </button>
-        <button class="tracker-action tracker-action-help" data-go="community">
-          <span aria-hidden="true">?</span>Hilfe
-        </button>
-        <button class="tracker-action tracker-action-danger" id="reset-streak">
-          <span aria-hidden="true">↻</span>Streak zurücksetzen
-        </button>
-      </div>
+    <section class="card quit-card reveal" id="quit-card" hidden>
+      <span class="quit-card-icon">⏳</span>
+      <div><strong>Reşo beendet sich in <b id="quit-left">30:00</b></strong><small>Bis dahin schütze ich dich weiter. Du kannst es dir jederzeit anders überlegen.</small></div>
+      <button class="button button-primary small" id="quit-cancel" type="button">Abbrechen – ich bleibe</button>
     </section>
 
-    <div class="metric-grid">
-      <article class="metric-card">
-        <span class="metric-icon purple">◷</span>
-        <span class="eyebrow">FOKUS GESAMT</span>
-        <strong>${Math.floor(data.totalFocusMinutes / 60)} <small>Std.</small></strong>
-        <p>${data.totalFocusMinutes % 60} Minuten zusätzlich</p>
-      </article>
-      <article class="metric-card">
-        <span class="metric-icon green">↗</span>
-        <span class="eyebrow">ZEIT ZURÜCKGEWONNEN</span>
-        <strong>${data.savedHours} <small>Std.</small></strong>
-        <p>Durch Fokus und bewusste Entscheidungen</p>
-      </article>
-      <article class="metric-card">
-        <span class="metric-icon orange">✦</span>
-        <span class="eyebrow">VERHINDERTE GEWOHNHEITEN</span>
-        <strong>${data.habitsPrevented}</strong>
-        <p>Jeder bewusste Moment zählt</p>
-      </article>
+    <section class="card faith-home reveal" id="faith-home" hidden></section>
+
+    ${readyCapsule ? `
+      <button class="capsule-banner reveal" id="open-capsule" type="button">
+        <span class="capsule-icon">💌</span>
+        <span><strong>Ein Brief von dir wartet auf dich</strong><small>Geschrieben am ${new Date(readyCapsule.created).toLocaleDateString("de-DE")} – heute darfst du ihn öffnen.</small></span>
+        <span class="risk-cta">Öffnen →</span>
+      </button>` : ""}
+
+
+    <section class="card hero reveal">
+      ${hasStart ? `
+        <div class="hero-visual">
+          ${prefs.counterStyle === "list" ? `<div class="unit-list" id="unit-list"></div>` : `
+            <div class="rings" aria-hidden="true">
+              ${ring({ size: 248, stroke: 18, progress: 0, color: "var(--accent)", className: "ring-outer" })}
+              ${ring({ size: 196, stroke: 18, progress: 0, color: "var(--teal)", className: "ring-middle" })}
+              ${ring({ size: 144, stroke: 18, progress: 0, color: "var(--green)", className: "ring-inner" })}
+              <div class="rings-center"><strong id="days-value">0</strong><span id="days-label">Tage</span></div>
+            </div>`}
+        </div>
+        <div class="hero-copy">
+          <span class="eyebrow">Frei seit</span>
+          <h2 class="hero-time" id="hero-time" role="timer" aria-live="off"></h2>
+          <p class="hero-milestone" id="hero-milestone"></p>
+          <div class="progress"><span id="milestone-bar"></span></div>
+          ${prefs.counterStyle !== "list" ? `
+            <div class="ring-legend">
+              <span><i style="background:var(--accent)"></i>Nächster Meilenstein</span>
+              <span><i style="background:var(--teal)"></i>Stunden heute</span>
+              <span><i style="background:var(--green)"></i>Minuten</span>
+            </div>` : ""}
+          <div class="hero-actions">
+            <button class="button button-primary" data-go="timer" type="button">${data.timer.running ? "Fokus läuft" : "Fokus starten"}</button>
+            <button class="button button-tinted" id="craving" type="button">Ich habe Verlangen</button>
+            <button class="button button-plain" id="reset-streak" type="button">Neu beginnen</button>
+          </div>
+        </div>` : `
+        <div class="hero-empty">
+          <div class="hero-empty-icon">${escapeHtml(addiction.emoji)}</div>
+          <h2>Dein neuer Weg beginnt jetzt.</h2>
+          <p class="muted">Starte deinen Zähler – oder trag in den Einstellungen ein, seit wann du schon frei bist.</p>
+          <div class="hero-actions">
+            <button class="button button-primary" id="start-streak" type="button">Jetzt starten</button>
+            <button class="button button-secondary" data-go="settings" type="button">Startdatum festlegen</button>
+          </div>
+        </div>`}
+    </section>
+
+    ${prefs.aiWarnings ? `
+      <section class="card ai-home reveal ${soon ? "is-soon" : ""}" style="--tone:${soon ? nextRisk.label.color : nowLabel.color}">
+        <div class="ai-home-clock">${riskClock(profile, nowHour)}</div>
+        <div class="ai-home-copy">
+          <span class="ai-badge">✦ Frühwarnsystem</span>
+          ${model.ready ? `
+            <h3>${soon ? (nextRisk.offset === 0 ? "Jetzt wird's oft schwer" : `In ${nextRisk.offset} ${nextRisk.offset === 1 ? "Stunde" : "Stunden"} wird's oft schwer`) : `Jetzt: ${nowLabel.text}`}</h3>
+            <p>${nextRisk ? `Nächste schwierige Zeit: <strong>${whenLabel}</strong>` : "Heute ist keine schwierige Zeit in Sicht. 🌿"}</p>
+            ${wavesAtThatTime ? `<p class="ai-proof">💪 Um diese Uhrzeit hast du schon ${wavesAtThatTime} ${wavesAtThatTime === 1 ? "Welle" : "Wellen"} besiegt.</p>` : ""}
+            <div class="window-chips">${topWindows(model, 3).map((window) => `<span class="window-chip" style="--tone:${riskLabel(window.level).color}">${escapeHtml(window.label)}</span>`).join("")}</div>`
+          : `<h3>${assessment.reasons.length ? `Jetzt: ${nowLabel.text}` : "Lernt dich gerade kennen"}</h3><p>Sobald ein paar Momente erfasst sind, warnt Reşo dich vor schwierigen Zeiten – bevor sie kommen.</p>`}
+          ${assessment.reasons.length ? `<div class="reason-chips">${assessment.reasons.map((reason) => `<span>${reason.icon} ${escapeHtml(reason.text)}</span>`).join("")}</div>` : ""}
+          ${usage.sessionMinutes ? `<p class="pc-time">💻 Seit ${pcLabel(usage.sessionMinutes)} am PC · heute ${pcLabel(usage.todayMinutes || 0)} · ${assessment.breakIn ? `Pause empfohlen in ${pcLabel(assessment.breakIn)}` : "<strong>Zeit für eine Pause</strong>"}</p>` : ""}
+          <p class="ai-tip" id="ai-tip" hidden></p>
+        </div>
+        ${model.ready ? `<button class="button ${soon ? "button-primary" : "button-secondary"} small ai-home-cta" id="risk-plan" type="button">${soon ? "Jetzt vorsorgen" : "Mein Plan"}</button>` : ""}
+      </section>` : ""}
+
+    ${prefs.showMetrics ? `
+      <button class="stat-strip reveal" data-go="stats" type="button" title="Details in der Statistik">
+        <span class="stat-chip"><i style="--tone:var(--green)">€</i><span><strong class="sensitive" data-count="${moneySaved}" data-format="money">0</strong><small>gespart</small></span></span>
+        <span class="stat-chip"><i style="--tone:var(--teal)">◷</i><span><strong><span data-count="${timeSaved}" data-format="dec1">0</span> Std.</strong><small>zurückgewonnen</small></span></span>
+        <span class="stat-chip"><i style="--tone:var(--indigo)">✦</i><span><strong><span data-count="${data.totalFocusMinutes / 60}" data-format="dec1">0</span> Std.</strong><small>Fokus</small></span></span>
+        <span class="stat-chip"><i style="--tone:var(--orange)">↺</i><span><strong data-count="${data.habitsPrevented}">0</strong><small>bewusste Entscheidungen</small></span></span>
+        <span class="stat-more" aria-hidden="true">›</span>
+      </button>` : ""}
+
+    <div class="split-grid">
+      <section class="card checkin-card reveal ${checkin ? "is-done" : ""}">
+        <div class="card-header">
+          <div><span class="eyebrow">Täglicher Check-in ${streak ? `· 🔥 ${streak} ${streak === 1 ? "Tag" : "Tage"} in Folge` : ""}</span>
+            <h3>${checkin ? `Heute: ${MOODS[checkin.mood - 1]} ${checkin.pledge ? "· Versprechen gegeben" : ""}` : "Wie geht es dir heute?"}</h3></div>
+          <button class="button ${checkin ? "button-secondary" : "button-primary"} small" id="open-checkin" type="button">${checkin ? "Bearbeiten" : "Einchecken"}</button>
+        </div>
+        <div class="mood-week">
+          ${week.map((day) => `<span class="mood-day ${day.entry ? "has-entry" : ""}" title="${day.entry ? `Stimmung ${day.entry.mood}/5 · Verlangen ${day.entry.craving}/5` : "Kein Check-in"}"><b>${day.entry ? MOODS[day.entry.mood - 1] : "·"}</b><small>${day.label}</small></span>`).join("")}
+        </div>
+        ${checkin?.gratitude ? `<p class="gratitude">Dankbar für: <em>${escapeHtml(checkin.gratitude)}</em></p>` : `<p class="muted small">20 Sekunden für dich – Stimmung, Verlangen und ein kleines Versprechen.</p>`}
+      </section>
+
+      <section class="card level-card reveal">
+        <div class="level-head">
+          <div class="level-badge">${ring({ size: 74, stroke: 7, progress: level.progress, color: "var(--purple)" })}<b>${level.level}</b></div>
+          <div><span class="eyebrow">Level ${level.level} · ${escapeHtml(level.title)}</span>
+            <h3>${formatNumber(xp.total)} XP</h3>
+            <small class="muted">Noch ${formatNumber(level.toNext)} XP bis Level ${level.level + 1}</small></div>
+        </div>
+        <span class="eyebrow quests-title">Heutige Quests · ${questsDone}/${quests.length}</span>
+        <div class="quests">${quests.map((quest) => `
+          <button type="button" class="quest ${quest.done ? "is-done" : ""}" data-quest="${quest.action}">
+            <span class="quest-check">${quest.done ? "✓" : quest.icon}</span><span>${quest.label}</span></button>`).join("")}</div>
+      </section>
     </div>
 
-    <div class="content-grid">
-      <section class="panel-card goal-card">
-        <div class="panel-heading">
-          <div><span class="eyebrow">DEIN ZIEL</span><h3>${escapeHtml(data.savingsGoal.name)}</h3></div>
-          <span class="goal-percent">${Math.round(data.savingsGoal.progress)}%</span>
-        </div>
-        <div class="progress-track"><span style="width:${Math.min(100, data.savingsGoal.progress)}%"></span></div>
-        <div class="goal-values"><strong>${formatEuro(data.savingsGoal.saved)}</strong><span>von ${formatEuro(data.savingsGoal.target)}</span></div>
-        <p class="muted">Dein bewusster Einsatz baut sich Schritt für Schritt auf.</p>
+    <div class="highlight-grid">
+      ${benefit && hasStart ? `
+        <section class="card highlight reveal" data-go="stats">
+          <div class="highlight-ring">${ring({ size: 84, stroke: 8, progress: soberDays / benefit.days, color: "var(--green)" })}<span>${Math.ceil(benefit.days - soberDays)}<small>Tage</small></span></div>
+          <div><span class="eyebrow">Dein Körper heilt</span><strong>${escapeHtml(benefit.label)}</strong><p>${escapeHtml(benefit.text)}</p></div>
+        </section>` : ""}
+      <section class="card highlight reveal" data-go="stats">
+        <div class="highlight-icon" style="--tone:var(--teal)">🔭</div>
+        <div><span class="eyebrow">In einem Jahr</span>
+          <strong class="sensitive">${dailyExpense ? formatMoney(yearDays * dailyExpense) : `${formatNumber(yearDays)} Tage frei`}</strong>
+          <p>${dailyExpense ? `gespart · ${formatNumber(yearDays * dailyHours)} Std. Lebenszeit zurück` : "Trag deine früheren Ausgaben ein, um mehr zu sehen."}</p></div>
       </section>
+      ${prefs.showGoal ? `
+        <section class="card highlight goal-highlight reveal" data-go="stats">
+          <div class="highlight-ring">${ring({ size: 84, stroke: 8, progress: goal.target > 0 ? Math.min(1, moneySaved / goal.target) : 0, color: "var(--orange)" })}<span>${Math.round(goal.target > 0 ? Math.min(100, (moneySaved / goal.target) * 100) : 0)}<small>%</small></span></div>
+          <div><span class="eyebrow">Sparziel</span><strong>${escapeHtml(goal.name)}</strong>
+            <p class="sensitive">${formatMoney(moneySaved)} von ${formatMoney(goal.target)}</p></div>
+        </section>` : ""}
+    </div>
 
-      <section class="panel-card quote-card">
-        <span class="eyebrow">EIN GEDANKE FÜR HEUTE</span>
-        <blockquote>„${escapeHtml(data.quote)}“</blockquote>
-        <span class="quote-mark">— Reşo</span>
-      </section>
-    </div>`;
+`;
 
-  root.querySelector("[data-go='timer']")?.addEventListener("click", () => document.querySelector("[data-page='timer']")?.click());
-  root.querySelector("[data-go='community']")?.addEventListener("click", () => document.querySelector("[data-page='community']")?.click());
-  const achievementsDialog = root.querySelector("#achievement-dialog");
-  root.querySelector("#open-achievements")?.addEventListener("click", () => achievementsDialog?.showModal());
-  root.querySelector("#close-achievements")?.addEventListener("click", () => achievementsDialog?.close());
-  achievementsDialog?.addEventListener("click", (event) => {
-    if (event.target === achievementsDialog) achievementsDialog.close();
+  root.querySelectorAll("[data-go]").forEach((element) => element.addEventListener("click", () => goTo(element.dataset.go)));
+  root.querySelector("#craving")?.addEventListener("click", () => window.dispatchEvent(new Event("reso:sos")));
+  root.querySelector("#open-palette").addEventListener("click", () => window.dispatchEvent(new Event("reso:palette")));
+  // a fresh tip from the server (cached for 30 minutes), filled in without blocking the page
+  api("/api/insights").then(({ tips = [], community = {} }) => {
+    const tip = root.querySelector("#ai-tip");
+    if (!tip || !tips.length) return;
+    tip.textContent = `💡 ${tips[new Date().getHours() % tips.length]}${community.crisis_chats_now ? ` · Gerade unterstützen sich ${community.crisis_chats_now} Menschen im Krisen-Chat.` : ""}`;
+    tip.hidden = false;
+  }).catch(() => {});
+  root.querySelector("#risk-plan")?.addEventListener("click", () => {
+    if (soon) {
+      showWarning({ start: nextRisk.at, label: nextRisk.label }, goTo);
+      return;
+    }
+    openSheet({
+      title: "Dein Plan für schwierige Momente",
+      body: `<div class="plan-list">${prefs.ifThenPlan.split("\n").filter((line) => line.trim()).map((line) => `<p>${escapeHtml(line)}</p>`).join("")}</div>
+        <p class="muted small">Du kannst deinen Plan in den Einstellungen unter „Notfall & Hilfe“ anpassen.</p>`,
+    });
   });
-  root.querySelector("#reset-streak")?.addEventListener("click", async () => {
-    if (!window.confirm("Möchtest du deine Streak wirklich zurücksetzen? Alle Streak- und Saison-Erfolge werden zurückgesetzt; dein Streak-Rekord bleibt erhalten.")) return;
+  root.querySelector("#open-capsule")?.addEventListener("click", async () => {
+    await api("/api/capsules", { method: "POST", body: { action: "open", id: readyCapsule.id } });
+    confetti();
+    openSheet({
+      title: "Ein Brief von dir",
+      wide: true,
+      onClose: () => refresh(),
+      body: `<div class="letter"><small>Geschrieben am ${new Date(readyCapsule.created).toLocaleDateString("de-DE")}</small><p>${escapeHtml(readyCapsule.text)}</p></div>`,
+    });
+  });
+  root.querySelector("#open-checkin").addEventListener("click", () => openCheckin({ api, showToast, existing: checkin, onSaved: () => refresh() }));
+  root.querySelectorAll("[data-quest]").forEach((button) => button.addEventListener("click", () => {
+    if (button.dataset.quest === "checkin") openCheckin({ api, showToast, existing: checkin, onSaved: () => refresh() });
+    else goTo(button.dataset.quest);
+  }));
+  root.querySelector("#open-achievements").addEventListener("click", () => openAchievements(soberDays));
+
+  // All four quests done: celebrate once per day.
+  if (questsDone === quests.length) {
+    const key = `reso:questsCelebrated:${dayKey(new Date())}`;
     try {
-      await api("/api/streak/reset", { method: "POST", body: {} });
-      showToast("Deine Streak wurde zurückgesetzt.");
+      if (!localStorage.getItem(key)) {
+        localStorage.setItem(key, "1");
+        setTimeout(() => { confetti(); showToast("Alle Quests von heute geschafft! Du bist großartig. 🌟"); }, 700);
+      }
+    } catch {
+      // storage unavailable
+    }
+  }
+
+  const restart = async (message, relapse) => {
+    try {
+      await api("/api/streak/reset", { method: "POST", body: { relapse } });
+      setPref("celebratedMilestone", 0);
+      showToast(message);
       await refresh();
     } catch (error) {
       showToast(error.message, true);
     }
+  };
+  root.querySelector("#start-streak")?.addEventListener("click", () => restart("Dein Weg beginnt jetzt. Wir glauben an dich.", false));
+  root.querySelector("#reset-streak")?.addEventListener("click", async () => {
+    const ok = await confirmSheet({
+      title: "Neu beginnen?",
+      text: `Ein Rückfall löscht nicht, was du geschafft hast: <strong>${escapeHtml(humanDuration(seconds))}</strong> frei. Rekord, XP und Abzeichen bleiben.<br><br>Geht es dir gerade schlecht? Unter „Ich brauche Hilfe“ findest du sofort Unterstützung.`,
+      confirmLabel: "Weiter",
+      danger: true,
+    });
+    if (!ok) return;
+    if (await openReflection({ api, showToast })) restart("Neuer Anfang. Hinfallen gehört dazu – du bist noch dabei.", true);
   });
 
-  requestAnimationFrame(() => root.querySelector(".streak-tracker")?.classList.replace("is-loading", "is-loaded"));
-  const updateClock = () => {
-    elapsed += 1;
-    const trackerUnits = getTrackerUnits(elapsed);
-    root.querySelectorAll("[data-tracker-unit]").forEach((row) => {
-      const value = row.querySelector(".tracker-value");
-      const fill = row.querySelector(".tracker-fill");
-      const unit = trackerUnits.find((item) => item.key === row.dataset.trackerUnit);
-      if (value && fill && unit) {
-        value.textContent = `${unit.value} ${unit.label}`;
-        fill.style.setProperty("--tracker-width", `${unit.width}%`);
-        row.hidden = unit.value === 0 && unit.key !== "seconds";
-      }
-    });
+  const milestone = hasStart && prefs.onboarded && !document.querySelector("dialog[open]") && pendingMilestone(soberDays);
+  if (milestone) {
+    setPref("celebratedMilestone", milestone.days);
+    if (milestone.major) setTimeout(() => celebrateMilestone(milestone, { api, showToast }), 900);
+    else setTimeout(() => showToast(`${milestone.icon} ${milestone.label} geschafft! Ein weiterer Meilenstein für dich.`), 900);
+  }
+
+  // Quit countdown (started from the tray) – visible here so it never surprises anyone.
+  const quitCard = root.querySelector("#quit-card");
+  let quitDeadline = 0;
+  const showQuit = (state) => {
+    quitDeadline = state?.quitDeadline || 0;
+    quitCard.hidden = !quitDeadline;
+    tickQuit();
   };
-  const interval = setInterval(updateClock, 1000);
-  return () => clearInterval(interval);
+  const tickQuit = () => {
+    if (!quitDeadline) return;
+    const left = Math.max(0, quitDeadline - Date.now());
+    root.querySelector("#quit-left").textContent = `${String(Math.floor(left / 60000)).padStart(2, "0")}:${String(Math.floor((left % 60000) / 1000)).padStart(2, "0")}`;
+  };
+  const onQuit = (event) => showQuit(event.detail);
+  window.addEventListener("reso:quit-state", onQuit);
+  const quitInterval = setInterval(tickQuit, 1000);
+  api("/api/app/state").then(showQuit).catch(() => {});
+  root.querySelector("#quit-cancel").addEventListener("click", async () => {
+    const state = await api("/api/app/quit", { method: "POST", body: { action: "cancel" } }).catch((error) => showToast(error.message, true));
+    if (state) window.dispatchEvent(new CustomEvent("reso:quit-state", { detail: state }));
+    showToast("Schön, dass du bleibst. 💙");
+  });
+  // Faith: next prayer and the verse of the day (only when the area is enabled)
+  let faithTimer;
+  loadFaith().then(() => {
+    const current = faith();
+    const religions = activeReligions(current);
+    const card = root.querySelector("#faith-home");
+    if (!card || !religions.length || !current.homeCard) return;
+    const verse = verseOfDay([religions[0]]); // same verse as in the faith area today
+    const config = religions.includes("islam") ? prayerConfig(current) : null;
+    const draw = () => {
+      const next = config ? nextPrayer(config) : null;
+      const minutes = next ? Math.max(0, Math.round((next.at - Date.now()) / 60000)) : 0;
+      card.innerHTML = `
+        <span class="faith-home-icon">${religions.map((id) => (id === "islam" ? "☪" : "✝")).join("")}</span>
+        <div>
+          ${next ? `<strong>${escapeHtml(next.label)} um ${formatClock(next.at, config.timeZone)} <small style="display:inline">· in ${minutes >= 60 ? `${Math.floor(minutes / 60)} Std. ${minutes % 60} Min.` : `${minutes} Min.`}</small></strong>` : ""}
+          ${verse ? `<small>„${escapeHtml(verse.text.length > 140 ? `${verse.text.slice(0, 137)}…` : verse.text)}“ – ${escapeHtml(verse.ref)}</small>` : ""}
+        </div>
+        <button class="button button-secondary small" data-go-faith type="button">Glaube öffnen</button>`;
+      card.querySelector("[data-go-faith]").addEventListener("click", () => goTo("faith"));
+      card.hidden = false;
+    };
+    draw();
+    if (config) faithTimer = setInterval(draw, 30000);
+  }).catch(() => {});
+
+  const stopQuit = () => {
+    clearInterval(faithTimer);
+    clearInterval(quitInterval);
+    window.removeEventListener("reso:quit-state", onQuit);
+  };
+
+  if (!hasStart) return stopQuit;
+
+  const outer = root.querySelector(".ring-outer");
+  const middle = root.querySelector(".ring-middle");
+  const inner = root.querySelector(".ring-inner");
+  const heroTime = root.querySelector("#hero-time");
+  const milestoneText = root.querySelector("#hero-milestone");
+  const milestoneBar = root.querySelector("#milestone-bar");
+  const daysValue = root.querySelector("#days-value");
+  const daysLabel = root.querySelector("#days-label");
+  const unitList = root.querySelector("#unit-list");
+
+  const update = () => {
+    const now = soberSeconds(data.streakStart);
+    const parts = splitDuration(now);
+    const next = nextMilestone(now);
+    heroTime.textContent = [
+      parts.days ? plural(parts.days, "Tag", "Tage") : "",
+      `${parts.hours} Std.`,
+      `${parts.minutes} Min.`,
+      prefs.showSeconds ? `${parts.seconds} Sek.` : "",
+    ].filter(Boolean).join(" · ");
+    milestoneText.textContent = next.next
+      ? `Noch ${humanDuration(next.remainingSeconds)} bis ${next.next.label} ${next.next.icon}`
+      : "Alle Meilensteine erreicht. Unglaublich. 🕊️";
+    milestoneBar.style.setProperty("--w", `${next.progress * 100}%`);
+    if (daysValue) {
+      daysValue.textContent = formatNumber(parts.days);
+      daysLabel.textContent = parts.days === 1 ? "Tag" : "Tage";
+      setRing(outer, next.progress);
+      setRing(middle, (parts.hours + parts.minutes / 60) / 24);
+      setRing(inner, (parts.minutes + parts.seconds / 60) / 60);
+    }
+    if (unitList) {
+      // Each bar shows how far the unit is towards its next step; empty units stay empty.
+      const nextDays = MAJOR_MILESTONES.find((item) => item.days > parts.days)?.days || parts.days || 1;
+      const rows = [
+        ["Tage", parts.days, parts.days / nextDays],
+        ["Stunden", parts.hours, parts.hours / 24],
+        ["Minuten", parts.minutes, parts.minutes / 60],
+        ...(prefs.showSeconds ? [["Sekunden", parts.seconds, parts.seconds / 60]] : []),
+      ];
+      unitList.innerHTML = rows.map(([label, value, fraction]) => `
+        <div class="unit-row">${value > 0 ? `<span class="unit-fill" style="--w:${Math.min(1, fraction) * 100}%"></span>` : ""}<strong>${value}</strong><span>${label}</span></div>`).join("");
+    }
+  };
+  update();
+  const interval = setInterval(update, 1000);
+
+  return () => {
+    clearInterval(interval);
+    stopQuit();
+  };
 }
