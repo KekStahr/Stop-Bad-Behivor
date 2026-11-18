@@ -196,7 +196,7 @@ motionQuery.addEventListener("change", applyPrefs);
 
 // One format everywhere: always with cents. `digits = 0` is only for chart axis ticks.
 export function formatMoney(value, digits = 2) {
-  return new Intl.NumberFormat("de-DE", {
+  return new Intl.NumberFormat((globalThis.document?.documentElement.lang || "de-DE"), {
     style: "currency",
     currency: prefs.currency,
     minimumFractionDigits: digits,
@@ -205,7 +205,7 @@ export function formatMoney(value, digits = 2) {
 }
 
 export function formatTime(date) {
-  return new Intl.DateTimeFormat("de-DE", {
+  return new Intl.DateTimeFormat((globalThis.document?.documentElement.lang || "de-DE"), {
     hour: "2-digit",
     minute: "2-digit",
     hour12: !prefs.clock24,

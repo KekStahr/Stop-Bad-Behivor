@@ -569,7 +569,7 @@ export async function render(root, { api, showToast, goTo }) {
         const date = new Date(message.created_at * 1000);
         const newDay = !previous || new Date(previous.created_at * 1000).toDateString() !== date.toDateString();
         return `
-          ${newDay ? `<div class="day-divider"><span>${new Intl.DateTimeFormat("de-DE", { weekday: "long", day: "numeric", month: "long" }).format(date)}</span></div>` : ""}
+          ${newDay ? `<div class="day-divider"><span>${new Intl.DateTimeFormat((globalThis.document?.documentElement.lang || "de-DE"), { weekday: "long", day: "numeric", month: "long" }).format(date)}</span></div>` : ""}
           <div class="message ${message.mine ? "is-mine" : ""} ${grouped && !newDay ? "is-grouped" : ""} ${start > 0 ? "is-new" : ""} ${!message.mine && mentions(message.text, myName()) ? "is-mention" : ""}" data-message="${message.id}">
             ${!message.mine ? (grouped && !newDay ? '<span class="avatar-spacer"></span>' : avatar(message.sender_name, message.sender_code, "small")) : ""}
             <div class="bubble-wrap">
@@ -785,7 +785,7 @@ export async function render(root, { api, showToast, goTo }) {
           <div class="card-header"><div><span class="eyebrow">Live</span><h3>Wer gerade durchhält</h3></div></div>
           <div class="challenge-feed">${data.feed.map((item) => `
             <div class="feed-row"><span>${item.emoji}</span><span><strong>${escapeHtml(item.mine ? "Du" : item.name)}</strong> ${item.mine ? "hast" : "hat"} Tag ${item.day} von „${escapeHtml(item.challenge)}“ geschafft</span>
-              <time>${new Date(item.at * 1000).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}</time></div>`).join("") || '<p class="muted small">Sei die erste Person heute. 🌱</p>'}</div>
+              <time>${new Date(item.at * 1000).toLocaleTimeString((globalThis.document?.documentElement.lang || "de-DE"), { hour: "2-digit", minute: "2-digit" })}</time></div>`).join("") || '<p class="muted small">Sei die erste Person heute. 🌱</p>'}</div>
         </section>`;
       const search = container.querySelector("#challenge-search");
       search.addEventListener("input", () => {
@@ -951,7 +951,7 @@ export async function render(root, { api, showToast, goTo }) {
     if (!alive || view !== "overview") return;
     const stats = result.stats;
     const leaderboard = Array.isArray(result.leaderboard) ? result.leaderboard : [];
-    const number = (value) => (stats ? new Intl.NumberFormat("de-DE").format(Number(value) || 0) : "—");
+    const number = (value) => (stats ? new Intl.NumberFormat((globalThis.document?.documentElement.lang || "de-DE")).format(Number(value) || 0) : "—");
     const podium = [leaderboard[1], leaderboard[0], leaderboard[2]];
     container.innerHTML = `
       <section class="community-hero">

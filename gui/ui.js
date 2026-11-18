@@ -5,8 +5,8 @@ const ease = (t) => 1 - Math.pow(1 - t, 3);
 
 export function formatNumber(value, format) {
   if (format === "money") return formatMoney(value);
-  if (format === "dec1") return new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(value);
-  return new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 }).format(Math.round(value));
+  if (format === "dec1") return new Intl.NumberFormat((globalThis.document?.documentElement.lang || "de-DE"), { maximumFractionDigits: 1 }).format(value);
+  return new Intl.NumberFormat((globalThis.document?.documentElement.lang || "de-DE"), { maximumFractionDigits: 0 }).format(Math.round(value));
 }
 
 // Animates every [data-count] element from 0 to its target value.

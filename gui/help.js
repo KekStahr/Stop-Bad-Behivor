@@ -32,7 +32,7 @@ export function timeline(help) {
     <li class="help-event is-${event.kind} ${index === all.length - 1 ? "is-current" : ""}">
       <span class="help-dot"></span>
       <span>${escapeHtml(event.text)}</span>
-      <time>${new Date(event.t * 1000).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}</time>
+      <time>${new Date(event.t * 1000).toLocaleTimeString((globalThis.document?.documentElement.lang || "de-DE"), { hour: "2-digit", minute: "2-digit" })}</time>
     </li>`).join("");
 }
 

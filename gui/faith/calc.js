@@ -19,7 +19,7 @@ export function ymdIn(timeZone, date = new Date()) {
 }
 
 export function formatClock(date, timeZone) {
-  return date ? new Intl.DateTimeFormat("de-DE", { hour: "2-digit", minute: "2-digit", ...(timeZone ? { timeZone } : {}) }).format(date) : "–";
+  return date ? new Intl.DateTimeFormat((globalThis.document?.documentElement.lang || "de-DE"), { hour: "2-digit", minute: "2-digit", ...(timeZone ? { timeZone } : {}) }).format(date) : "–";
 }
 
 // ---- prayer times ----------------------------------------------------------------------

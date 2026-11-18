@@ -27,7 +27,7 @@ function greeting() {
 }
 
 const plural = (value, singular, pluralLabel) => `${value} ${value === 1 ? singular : pluralLabel}`;
-const shortDate = (date) => new Intl.DateTimeFormat("de-DE", { day: "numeric", month: "short", year: "numeric" }).format(date);
+const shortDate = (date) => new Intl.DateTimeFormat((globalThis.document?.documentElement.lang || "de-DE"), { day: "numeric", month: "short", year: "numeric" }).format(date);
 
 export function openAchievements(soberDays) {
   const reached = MILESTONES.filter((milestone) => soberDays >= milestone.days);
@@ -81,12 +81,12 @@ export async function render(root, { api, showToast, refresh, goTo }) {
   const moneySaved = soberDays * dailyExpense;
   const timeSaved = soberDays * dailyHours + (Number(data.savedHours) || 0);
   const reached = MILESTONES.filter((milestone) => soberDays >= milestone.days).length;
-  const dateLabel = new Intl.DateTimeFormat("de-DE", { weekday: "long", day: "numeric", month: "long" }).format(new Date());
+  const dateLabel = new Intl.DateTimeFormat((globalThis.document?.documentElement.lang || "de-DE"), { weekday: "long", day: "numeric", month: "long" }).format(new Date());
   const checkin = data.todayCheckin;
   const week = Array.from({ length: 7 }, (_, index) => {
     const date = new Date();
     date.setDate(date.getDate() - (6 - index));
-    return { label: new Intl.DateTimeFormat("de-DE", { weekday: "narrow" }).format(date), entry: analytics.checkins?.[dayKey(date)] };
+    return { label: new Intl.DateTimeFormat((globalThis.document?.documentElement.lang || "de-DE"), { weekday: "narrow" }).format(date), entry: analytics.checkins?.[dayKey(date)] };
   });
   const model = buildRiskModel(analytics);
   const profile = hourProfile(model);
@@ -137,7 +137,7 @@ export async function render(root, { api, showToast, refresh, goTo }) {
     ${readyCapsule ? `
       <button class="capsule-banner reveal" id="open-capsule" type="button">
         <span class="capsule-icon">💌</span>
-        <span><strong>Ein Brief von dir wartet auf dich</strong><small>Geschrieben am ${new Date(readyCapsule.created).toLocaleDateString("de-DE")} – heute darfst du ihn öffnen.</small></span>
+        <span><strong>Ein Brief von dir wartet auf dich</strong><small>Geschrieben am ${new Date(readyCapsule.created).toLocaleDateString((globalThis.document?.documentElement.lang || "de-DE"))} – heute darfst du ihn öffnen.</small></span>
         <span class="risk-cta">Öffnen →</span>
       </button>` : ""}
 
@@ -243,7 +243,7 @@ export async function render(root, { api, showToast, refresh, goTo }) {
       title: "Ein Brief von dir",
       wide: true,
       onClose: () => refresh(),
-      body: `<div class="letter"><small>Geschrieben am ${new Date(readyCapsule.created).toLocaleDateString("de-DE")}</small><p>${escapeHtml(readyCapsule.text)}</p></div>`,
+      body: `<div class="letter"><small>Geschrieben am ${new Date(readyCapsule.created).toLocaleDateString((globalThis.document?.documentElement.lang || "de-DE"))}</small><p>${escapeHtml(readyCapsule.text)}</p></div>`,
     });
   });
   bindDonation(root, showToast);

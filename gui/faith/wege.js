@@ -398,7 +398,7 @@ function deeds({ religions, showToast }) {
       <p class="muted small">So wird gezählt: Jede Tat, die du hier einträgst, zählt <strong>einmal</strong> – und nur für ${religions.length > 1 ? "die oben gewählte Religion" : "deine Religion"}. Die Zahl oben in „Wege“ ist die Summe deiner Einträge.</p>
       <form class="deed-own" id="deed-form"><input id="deed-text" maxlength="200" placeholder="Eigene gute Tat eintragen …"><button class="button button-primary" type="submit">Eintragen</button></form>
       <h4 class="deed-group">Deine guten Taten (${log.length})</h4>
-      <div class="deed-log">${log.slice(0, 30).map((deed) => `<div><span>${deed.religion ? RELIGIONS[deed.religion].symbol : "✓"} ${escapeHtml(deed.text)}</span><small>${new Date(deed.at).toLocaleDateString("de-DE")}</small></div>`).join("") || '<p class="muted small">Tippe oben auf eine Idee, wenn du sie umgesetzt hast.</p>'}</div>`;
+      <div class="deed-log">${log.slice(0, 30).map((deed) => `<div><span>${deed.religion ? RELIGIONS[deed.religion].symbol : "✓"} ${escapeHtml(deed.text)}</span><small>${new Date(deed.at).toLocaleDateString((globalThis.document?.documentElement.lang || "de-DE"))}</small></div>`).join("") || '<p class="muted small">Tippe oben auf eine Idee, wenn du sie umgesetzt hast.</p>'}</div>`;
     const add = (text) => {
       saveFaith({ deeds: [...faith().deeds, { id: crypto.randomUUID(), text, religion: forReligion, at: Date.now() }].slice(-1000) });
       showToast(forReligion === "islam" ? "Möge Allah es annehmen. 🤲" : "Danke! Gott segne dich. 🤍");

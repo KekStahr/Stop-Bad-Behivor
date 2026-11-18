@@ -22,9 +22,9 @@ const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 const MOODS = ["😣", "😕", "😐", "🙂", "😄"];
 let metric = "money";
 
-const longDate = (date) => new Intl.DateTimeFormat("de-DE", { day: "numeric", month: "long", year: "numeric" }).format(date);
-const shortDate = (date) => new Intl.DateTimeFormat("de-DE", { day: "numeric", month: "short" }).format(date);
-const dec = (value, digits = 0) => new Intl.NumberFormat("de-DE", { maximumFractionDigits: digits }).format(value);
+const longDate = (date) => new Intl.DateTimeFormat((globalThis.document?.documentElement.lang || "de-DE"), { day: "numeric", month: "long", year: "numeric" }).format(date);
+const shortDate = (date) => new Intl.DateTimeFormat((globalThis.document?.documentElement.lang || "de-DE"), { day: "numeric", month: "short" }).format(date);
+const dec = (value, digits = 0) => new Intl.NumberFormat((globalThis.document?.documentElement.lang || "de-DE"), { maximumFractionDigits: digits }).format(value);
 const daysAgo = (count) => {
   const date = new Date();
   date.setDate(date.getDate() - count);
@@ -296,7 +296,7 @@ export async function render(root, { api, goTo, showToast, refresh }) {
       const segments = top.map((item, index) => ({ ...item, color: PALETTE[index % PALETTE.length] }));
       const focus14 = Array.from({ length: 14 }, (_, index) => {
         const date = daysAgo(13 - index);
-        return { label: index % 2 || index === 13 ? new Intl.DateTimeFormat("de-DE", { weekday: "narrow" }).format(date) : "", value: Number(activity[dayKey(date)]) || 0, title: `${shortDate(date)}: ${Number(activity[dayKey(date)]) || 0} Min.` };
+        return { label: index % 2 || index === 13 ? new Intl.DateTimeFormat((globalThis.document?.documentElement.lang || "de-DE"), { weekday: "narrow" }).format(date) : "", value: Number(activity[dayKey(date)]) || 0, title: `${shortDate(date)}: ${Number(activity[dayKey(date)]) || 0} Min.` };
       });
       return `
         <div class="card ai-card">
@@ -353,7 +353,7 @@ export async function render(root, { api, goTo, showToast, refresh }) {
                 return `<div class="reward ${reward.redeemed ? "is-redeemed" : progress >= 1 ? "is-ready" : ""}">
                   <span class="reward-emoji">${escapeHtml(reward.emoji)}</span>
                   <div class="reward-copy"><strong>${escapeHtml(reward.name)}</strong>
-                    <small class="sensitive">${reward.redeemed ? `Eingelöst am ${new Date(reward.redeemed).toLocaleDateString("de-DE")}` : `${formatMoney(reward.price)} · ${Math.round(progress * 100)} %`}</small>
+                    <small class="sensitive">${reward.redeemed ? `Eingelöst am ${new Date(reward.redeemed).toLocaleDateString((globalThis.document?.documentElement.lang || "de-DE"))}` : `${formatMoney(reward.price)} · ${Math.round(progress * 100)} %`}</small>
                     ${reward.redeemed ? "" : `<div class="progress"><span style="--w:${progress * 100}%"></span></div>`}</div>
                   ${!reward.redeemed && progress >= 1 ? `<button class="button button-primary small" data-redeem="${index}" type="button">Einlösen</button>` : ""}
                   <button class="icon-button danger" data-remove-reward="${index}" type="button" aria-label="Entfernen">×</button>
@@ -379,8 +379,8 @@ export async function render(root, { api, goTo, showToast, refresh }) {
             </div>
             <div class="capsule-list">${capsules.map((capsule) => `
               <div class="capsule ${capsule.ready ? "is-ready" : ""}"><span>${capsule.ready ? "💌" : "🔒"}</span>
-                <span><strong>${capsule.ready ? (capsule.opened ? "Geöffnet" : "Bereit zum Öffnen") : `Öffnet am ${new Date(capsule.openAt).toLocaleDateString("de-DE")}`}</strong>
-                <small>Geschrieben am ${new Date(capsule.created).toLocaleDateString("de-DE")}</small></span></div>`).join("")}</div>
+                <span><strong>${capsule.ready ? (capsule.opened ? "Geöffnet" : "Bereit zum Öffnen") : `Öffnet am ${new Date(capsule.openAt).toLocaleDateString((globalThis.document?.documentElement.lang || "de-DE"))}`}</strong>
+                <small>Geschrieben am ${new Date(capsule.created).toLocaleDateString((globalThis.document?.documentElement.lang || "de-DE"))}</small></span></div>`).join("")}</div>
           </div>
         </div>
         <div class="tool-grid">
@@ -535,7 +535,7 @@ export async function render(root, { api, goTo, showToast, refresh }) {
     const openAt = dayKey(new Date(Date.now() + days * DAY * 1000));
     try {
       await api("/api/capsules", { method: "POST", body: { action: "create", text, openAt } });
-      showToast(`Versiegelt. Dein Brief öffnet sich am ${new Date(openAt).toLocaleDateString("de-DE")}. 💌`);
+      showToast(`Versiegelt. Dein Brief öffnet sich am ${new Date(openAt).toLocaleDateString((globalThis.document?.documentElement.lang || "de-DE"))}. 💌`);
       refresh();
     } catch (error) {
       showToast(error.message, true);

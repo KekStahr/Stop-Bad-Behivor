@@ -180,7 +180,7 @@ function animator(svg) {
 }
 
 // ---- audio ---------------------------------------------------------------------------------------
-const VOICE_LANG = { de: "de-DE", en: "en-US", tr: "tr-TR", fr: "fr-FR", ar: "ar" };
+const VOICE_LANG = { de: (globalThis.document?.documentElement.lang || "de-DE"), en: "en-US", tr: "tr-TR", fr: "fr-FR", ar: "ar" };
 function voiceFor(lang) {
   const voices = window.speechSynthesis?.getVoices() || [];
   const wanted = VOICE_LANG[lang] || lang;

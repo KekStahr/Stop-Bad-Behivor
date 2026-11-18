@@ -347,7 +347,7 @@ function daysUntil(date) {
   const today = new Date();
   const days = Math.round((new Date(date.getFullYear(), date.getMonth(), date.getDate()) - new Date(today.getFullYear(), today.getMonth(), today.getDate())) / 86400000);
   const when = days === 0 ? "heute" : days === 1 ? "morgen" : `in ${days} Tagen`;
-  return `${when} · ${date.toLocaleDateString("de-DE", { weekday: "short", day: "numeric", month: "long" })}`;
+  return `${when} · ${date.toLocaleDateString((globalThis.document?.documentElement.lang || "de-DE"), { weekday: "short", day: "numeric", month: "long" })}`;
 }
 
 function trackerStreak() {
@@ -425,13 +425,13 @@ function renderPrayer({ view, religions, showToast, openRead }) {
     const today = todayKey();
     const past = week.filter((day) => todayKey(day) <= today);
     const done = past.reduce((sum, day) => sum + items.filter((item) => log[todayKey(day)]?.[item.id]).length, 0);
-    const range = `${week[0].toLocaleDateString("de-DE", { day: "numeric", month: "short" })} – ${week[6].toLocaleDateString("de-DE", { day: "numeric", month: "short" })}`;
+    const range = `${week[0].toLocaleDateString((globalThis.document?.documentElement.lang || "de-DE"), { day: "numeric", month: "short" })} – ${week[6].toLocaleDateString((globalThis.document?.documentElement.lang || "de-DE"), { day: "numeric", month: "short" })}`;
     return `
       <section class="card faith-card">
         <header>${badge(religion)}<span class="week-nav"><button type="button" class="icon-button" data-week="-1" aria-label="Vorherige Woche">‹</button><small>${weekOffset ? range : "Diese Woche"}</small><button type="button" class="icon-button" data-week="1" aria-label="Nächste Woche" ${weekOffset ? "" : "disabled"}>›</button></span></header>
         <div class="tracker-grid" style="--cols:7">
           <span></span>${week.map((day, index) => `<small class="${todayKey(day) === today ? "is-today" : ""}">${WEEKDAYS[index]}<b>${day.getDate()}</b></small>`).join("")}
-          ${items.map((item) => `<span class="tracker-label">${escapeHtml(item.label)}</span>${week.map((day) => `<button type="button" class="tracker-dot ${log[todayKey(day)]?.[item.id] ? "is-done" : ""} ${todayKey(day) === today ? "is-today" : ""}" data-day="${todayKey(day)}" data-item="${item.id}" ${todayKey(day) > today ? "disabled" : ""} aria-label="${escapeHtml(item.label)} ${day.toLocaleDateString("de-DE")}"></button>`).join("")}`).join("")}
+          ${items.map((item) => `<span class="tracker-label">${escapeHtml(item.label)}</span>${week.map((day) => `<button type="button" class="tracker-dot ${log[todayKey(day)]?.[item.id] ? "is-done" : ""} ${todayKey(day) === today ? "is-today" : ""}" data-day="${todayKey(day)}" data-item="${item.id}" ${todayKey(day) > today ? "disabled" : ""} aria-label="${escapeHtml(item.label)} ${day.toLocaleDateString((globalThis.document?.documentElement.lang || "de-DE"))}"></button>`).join("")}`).join("")}
         </div>
         <small class="muted">${done} von ${items.length * past.length} erledigt${weekOffset ? "" : " – bisher diese Woche"}</small>
         ${religion === "islam" ? `<div class="qada"><span>Nachzuholende Gebete (Qaḍāʾ)</span><button type="button" class="icon-button" data-qada="-1">−</button><b id="qada">${current.qada}</b><button type="button" class="icon-button" data-qada="1">+</button></div>` : ""}
@@ -460,7 +460,7 @@ function renderPrayer({ view, religions, showToast, openRead }) {
           ${config ? `
             <div class="times-today">${PRAYER_TIMES.map((prayer) => `<div class="${times[prayer.id] < new Date() ? "is-past" : ""} ${prayer.noPrayer ? "is-sun" : ""}"><small>${prayer.label}</small><b>${formatClock(times[prayer.id], config.timeZone)}</b><span>${prayer.hint}</span></div>`).join("")}</div>
             <details class="times-week"><summary>Die nächsten 7 Tage</summary><table><thead><tr><th></th>${PRAYER_TIMES.map((prayer) => `<th>${prayer.label}</th>`).join("")}</tr></thead><tbody>
-              ${weekTimes.map(({ day, times: dayTimes }) => `<tr><th>${day.toLocaleDateString("de-DE", { weekday: "short", day: "numeric", month: "numeric" })}</th>${PRAYER_TIMES.map((prayer) => `<td>${formatClock(dayTimes[prayer.id], config.timeZone)}</td>`).join("")}</tr>`).join("")}
+              ${weekTimes.map(({ day, times: dayTimes }) => `<tr><th>${day.toLocaleDateString((globalThis.document?.documentElement.lang || "de-DE"), { weekday: "short", day: "numeric", month: "numeric" })}</th>${PRAYER_TIMES.map((prayer) => `<td>${formatClock(dayTimes[prayer.id], config.timeZone)}</td>`).join("")}</tr>`).join("")}
             </tbody></table></details>
             ${night ? `<p class="night-third">🌌 Letztes Drittel der Nacht (Tahadschud): ab <b>${formatClock(night, config.timeZone)}</b> bis Fadschr</p>` : ""}
             <small class="muted">Berechnung: ${escapeHtml(methodLabel(current.method))} · Asr ${current.islamTradition === "sunni-hanafi" ? "hanafitisch" : "Standard"} · Qibla ${qiblaText(current.location)}</small>`
@@ -509,7 +509,7 @@ function renderCalendar({ view, religions }) {
   const list = holidays({ ...current, christian: religions.includes("christian"), islam: religions.includes("islam") }, new Date(), 366);
   const months = new Map();
   for (const event of list) {
-    const key = event.date.toLocaleDateString("de-DE", { month: "long", year: "numeric" });
+    const key = event.date.toLocaleDateString((globalThis.document?.documentElement.lang || "de-DE"), { month: "long", year: "numeric" });
     if (!months.has(key)) months.set(key, []);
     months.get(key).push(event);
   }
@@ -523,7 +523,7 @@ function renderCalendar({ view, religions }) {
         <h3>${escapeHtml(month)}</h3>
         ${events.map((event) => `
           <article class="calendar-event is-${event.religion}">
-            <time><b>${event.date.getDate()}</b><small>${event.date.toLocaleDateString("de-DE", { weekday: "short" })}</small></time>
+            <time><b>${event.date.getDate()}</b><small>${event.date.toLocaleDateString((globalThis.document?.documentElement.lang || "de-DE"), { weekday: "short" })}</small></time>
             <span class="holiday-icon">${event.icon}</span>
             <div><strong>${escapeHtml(event.title)}</strong>${event.text ? `<small>${escapeHtml(event.text)}</small>` : ""}${event.hijri ? `<small class="muted">${escapeHtml(event.hijri)}</small>` : ""}</div>
             <span class="calendar-side">${badge(event.religion)}<small>${escapeHtml(daysUntil(event.date).split(" · ")[0])}</small></span>
@@ -552,7 +552,7 @@ function renderJournal({ view, religions, showToast }) {
       <div class="chip-row">${[["all", "Alle"], ...Object.entries(JOURNAL_KINDS).map(([id, item]) => [id, item.label])].map(([id, label]) => `<button type="button" class="chip small ${filter === id ? "is-selected" : ""}" data-filter="${id}">${escapeHtml(label)}</button>`).join("")}</div>
       <div class="journal-list">${entries.map((entry) => `
         <article class="journal-entry ${entry.answered ? "is-answered" : ""}">
-          <header><span>${JOURNAL_KINDS[entry.kind]?.icon || "✍️"} ${escapeHtml(JOURNAL_KINDS[entry.kind]?.label || "")}</span>${badge(entry.religion)}<time>${new Date(entry.at).toLocaleDateString("de-DE", { day: "numeric", month: "long", year: "numeric" })}</time></header>
+          <header><span>${JOURNAL_KINDS[entry.kind]?.icon || "✍️"} ${escapeHtml(JOURNAL_KINDS[entry.kind]?.label || "")}</span>${badge(entry.religion)}<time>${new Date(entry.at).toLocaleDateString((globalThis.document?.documentElement.lang || "de-DE"), { day: "numeric", month: "long", year: "numeric" })}</time></header>
           <p>${escapeHtml(entry.text).replace(/\n/g, "<br>")}</p>
           <footer>
             ${entry.kind === "request" ? `<button type="button" class="link-button" data-answer="${entry.id}">${entry.answered ? "✓ Erhört – Danke!" : "Als erhört markieren"}</button>` : "<span></span>"}

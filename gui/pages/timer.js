@@ -36,7 +36,7 @@ export async function render(root, { api, showToast, refresh }) {
     const date = new Date();
     date.setDate(date.getDate() - (6 - index));
     return {
-      label: new Intl.DateTimeFormat("de-DE", { weekday: "short" }).format(date),
+      label: new Intl.DateTimeFormat((globalThis.document?.documentElement.lang || "de-DE"), { weekday: "short" }).format(date),
       value: Number(activity[dayKey(date)]) || 0,
     };
   });

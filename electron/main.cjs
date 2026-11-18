@@ -382,7 +382,8 @@ function onTrigger(word) {
 
 // ---- start ---------------------------------------------------------------------------
 async function start() {
-  app.setAppUserModelId("de.reso.desktop");
+  // dev runs get their own id – otherwise Windows shows the Electron atom for the installed Life in the taskbar
+  app.setAppUserModelId(app.isPackaged ? "de.reso.desktop" : "de.reso.desktop.dev");
   registerAppProtocol();
   store = new Store(app.getPath("userData"));
   const google = createGoogle({ store, safeStorage, openExternal: (url) => shell.openExternal(url) });

@@ -634,8 +634,11 @@ export async function render(root, { api, showToast }) {
     let any = false;
     root.querySelectorAll("[data-group]").forEach((group) => {
       let visible = 0;
+      const title = group.querySelector("h2").textContent;
       group.querySelectorAll("[data-row]").forEach((row) => {
-        const match = !query || row.dataset.search.includes(query);
+        // German original plus what is on screen – so every app language finds its own words
+        const text = `${row.dataset.search} ${row.querySelector(".setting-copy").textContent} ${title}`.toLowerCase();
+        const match = !query || text.includes(query);
         row.hidden = !match;
         if (match) visible += 1;
       });
