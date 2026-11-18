@@ -25,12 +25,14 @@ const spaced = (value) => ` ${value.replace(new RegExp(`[^${LETTER}0-9]+`, "g"),
 // casiino → casino (only used for longer words, where it cannot create accidental hits)
 const single = (value) => value.replace(/([a-zäöüß])\1+/g, "$1");
 
-function compile(words) {
+// own: the user's own words – they are found anywhere (also "stri" in "stripchat"), since the user
+// chose them on purpose; only catalog words that are short need whole-word mode.
+function compile(words, own = new Set()) {
   return words.map((raw) => {
     const forced = String(raw).startsWith("=");
     const word = normalize(forced ? String(raw).slice(1) : raw).trim();
     const plain = word.replace(new RegExp(`[^${LETTER}0-9 ]`, "g"), "");
-    const whole = forced || plain.replace(/ /g, "").length <= 4;
+    const whole = forced || (!own.has(String(raw)) && plain.replace(/ /g, "").length <= 4);
     return {
       raw: forced ? String(raw).slice(1) : String(raw),
       whole,

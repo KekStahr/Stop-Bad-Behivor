@@ -1,10 +1,10 @@
-import asyncio
 import os
 import json
 import time
 import base64
 import binascii
 import hashlib
+import hmac
 from collections import deque
 from typing import Any, Dict, Optional
 import requests
@@ -14,11 +14,9 @@ from fastapi import (
     Depends,
     Header,
     Request,
-    WebSocket,
-    WebSocketDisconnect,
 )
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, conint, constr
 from sqlalchemy import (
     create_engine,
     Column,
@@ -26,8 +24,6 @@ from sqlalchemy import (
     Integer,
     Text,
     Float,
-    ForeignKey,
-    UniqueConstraint,
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
@@ -60,48 +56,6 @@ class FullUserBackupDB(Base):
     stats_json = Column(Text, nullable=False)
 
 
-class ForumPostDB(Base):
-    __tablename__ = "community_forum_posts"
-    id = Column(Integer, primary_key=True, index=True)
-    author_id = Column(String(32), nullable=False, index=True)
-    author_name = Column(String(32), nullable=False)
-    text = Column(Text, nullable=False)
-    media_type = Column(String(32), nullable=True)
-    media_data = Column(Text, nullable=True)
-    created_at = Column(Float, nullable=False, index=True)
-
-
-class ForumCommentDB(Base):
-    __tablename__ = "community_forum_comments"
-    id = Column(Integer, primary_key=True, index=True)
-    post_id = Column(
-        Integer,
-        ForeignKey("community_forum_posts.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    author_id = Column(String(32), nullable=False, index=True)
-    author_name = Column(String(32), nullable=False)
-    text = Column(String(1000), nullable=False)
-    created_at = Column(Float, nullable=False)
-
-
-class ForumReactionDB(Base):
-    __tablename__ = "community_forum_reactions"
-    id = Column(Integer, primary_key=True, index=True)
-    post_id = Column(
-        Integer,
-        ForeignKey("community_forum_posts.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    author_id = Column(String(32), nullable=False, index=True)
-    emoji = Column(String(16), nullable=False)
-    __table_args__ = (
-        UniqueConstraint("post_id", "author_id", "emoji", name="uq_forum_reaction"),
-    )
-
-
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title="Life Cloud & Community API")
 
@@ -109,30 +63,36 @@ MAX_FORUM_MEDIA_SIZE = 500 * 1024
 MAX_FORUM_REQUEST_SIZE = 700 * 1024
 FORUM_ALLOWED_MEDIA = {"image/png", "image/jpeg", "image/gif"}
 FORUM_ALLOWED_REACTIONS = {"❤️", "👍", "😂", "🔥", "🙌", "🎯"}
-forum_write_times = {}
+
+
+MAX_REQUEST_SIZE = 1024 * 1024
+MAX_BACKUP_REQUEST_SIZE = 3 * 1024 * 1024
 
 
 @app.middleware("http")
-async def limit_forum_request_size(request: Request, call_next):
-    if (
-        request.url.path.startswith("/community/forum/")
-        or request.url.path == "/community/forum"
-        or request.url.path.startswith("/community/social/")
-    ):
+async def limit_request_size(request: Request, call_next):
+    """Every write must declare its size and stay small – no memory exhaustion via huge or chunked bodies."""
+    if request.method in ("POST", "PUT", "PATCH"):
+        limit = MAX_BACKUP_REQUEST_SIZE if request.url.path == "/user/backup" else MAX_REQUEST_SIZE
+        if request.url.path.startswith("/community/social/"):
+            limit = MAX_FORUM_REQUEST_SIZE
         content_length = request.headers.get("content-length")
-        if content_length:
-            try:
-                if int(content_length) > MAX_FORUM_REQUEST_SIZE:
-                    return JSONResponse(
-                        status_code=413,
-                        content={"detail": "Der Beitrag ist zu groß."},
-                    )
-            except ValueError:
-                return JSONResponse(
-                    status_code=400,
-                    content={"detail": "Ungültige Anfragegröße."},
-                )
+        if not content_length or not content_length.isdigit():
+            return JSONResponse(status_code=411, content={"detail": "Die Anfragegröße fehlt."})
+        if int(content_length) > limit:
+            return JSONResponse(status_code=413, content={"detail": "Die Anfrage ist zu groß."})
     return await call_next(request)
+
+
+def client_ip(request: Request):
+    """Render sits in front of the app; its first X-Forwarded-For entry is the real client."""
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()[:64]
+    return request.client.host if request.client else "unknown"
+
+
+sync_times = {}
 
 
 def _validate_forum_identity(author_id, author_name):
@@ -196,47 +156,6 @@ def _validate_forum_media(media_type, media_data):
     return media_type, media_data
 
 
-def _allow_forum_write(request: Request):
-    now = time.monotonic()
-    address = request.client.host if request.client else "unknown"
-    timestamps = forum_write_times.setdefault(address, deque())
-    while timestamps and now - timestamps[0] > 60:
-        timestamps.popleft()
-    if len(timestamps) >= 20:
-        raise HTTPException(
-            status_code=429,
-            detail="Bitte warte kurz, bevor du weiter postest.",
-        )
-    timestamps.append(now)
-    if len(forum_write_times) > 10000:
-        expired = [
-            key
-            for key, values in forum_write_times.items()
-            if not values or now - values[-1] > 600
-        ]
-        for key in expired:
-            forum_write_times.pop(key, None)
-
-
-class ForumPostSchema(BaseModel):
-    author_id: str
-    author_name: str
-    text: str = ""
-    media_type: Optional[str] = None
-    media_data: Optional[str] = None
-
-
-class ForumCommentSchema(BaseModel):
-    author_id: str
-    author_name: str
-    text: str
-
-
-class ForumReactionSchema(BaseModel):
-    author_id: str
-    emoji: str
-
-
 def get_db():
     db = SessionLocal()
     try:
@@ -245,11 +164,11 @@ def get_db():
         db.close()
 
 class UserStatsSchema(BaseModel):
-    username: str
-    streak: int
-    longest_streak: int
-    total_focus_minutes: int
-    habits_prevented: int
+    username: constr(pattern=r"^u-[0-9a-f]{16}$")
+    streak: conint(ge=0, le=36500)
+    longest_streak: conint(ge=0, le=36500)
+    total_focus_minutes: conint(ge=0, le=10_000_000)
+    habits_prevented: conint(ge=0, le=10_000_000)
 
 
 class FullUserDataSchema(BaseModel):
@@ -307,7 +226,16 @@ def get_google_user_id(authorization: Optional[str] = Header(default=None)):
 
 
 @app.post("/sync")
-def sync_stats(stats: UserStatsSchema, db: Session = Depends(get_db)):
+def sync_stats(stats: UserStatsSchema, request: Request, db: Session = Depends(get_db)):
+    now = time.monotonic()
+    stamps = sync_times.setdefault(client_ip(request), deque())
+    while stamps and now - stamps[0] > 600:
+        stamps.popleft()
+    if len(stamps) >= 10:
+        raise HTTPException(status_code=429, detail="Bitte etwas langsamer.")
+    stamps.append(now)
+    if len(sync_times) > 20000:
+        sync_times.clear()
     db_user = db.query(UserStatsDB).filter(UserStatsDB.username == stats.username).first()
     if not db_user:
         db_user = UserStatsDB(username=stats.username)
@@ -421,390 +349,60 @@ def get_community_leaderboard(db: Session = Depends(get_db)):
     }
 
 
-def _forum_post_payload(post, viewer_id, db):
-    comments = (
-        db.query(ForumCommentDB)
-        .filter(ForumCommentDB.post_id == post.id)
-        .order_by(ForumCommentDB.created_at.asc(), ForumCommentDB.id.asc())
-        .limit(100)
-        .all()
-    )
-    reactions = (
-        db.query(ForumReactionDB)
-        .filter(ForumReactionDB.post_id == post.id)
-        .all()
-    )
-    counts = {}
-    mine = []
-    for reaction in reactions:
-        counts[reaction.emoji] = counts.get(reaction.emoji, 0) + 1
-        if reaction.author_id == viewer_id:
-            mine.append(reaction.emoji)
-    return {
-        "id": post.id,
-        "author_name": post.author_name,
-        "text": post.text,
-        "media_type": post.media_type,
-        "media_data": post.media_data,
-        "created_at": post.created_at,
-        "comments": [
-            {
-                "id": comment.id,
-                "author_name": comment.author_name,
-                "text": comment.text,
-                "created_at": comment.created_at,
-            }
-            for comment in comments
-        ],
-        "reactions": counts,
-        "my_reactions": mine,
-    }
+# ---- feedback from the app to the developer --------------------------------------------
+FEEDBACK_AREAS = {"overview", "focus", "community", "stats", "faith", "prayer", "protection", "settings", "language", "design", "android", "other"}
+feedback_times = {}
 
 
-@app.get("/community/forum")
-def list_forum_posts(
-    author_id: str = "",
-    limit: int = 20,
-    before: Optional[int] = None,
-    db: Session = Depends(get_db),
-):
-    if author_id and (
-        len(author_id) != 32
-        or any(character not in "0123456789abcdef" for character in author_id.lower())
-    ):
-        raise HTTPException(status_code=400, detail="Ungültige Community-ID.")
-    limit = min(max(limit, 1), 30)
-    query = db.query(ForumPostDB)
-    if before is not None:
-        query = query.filter(ForumPostDB.id < before)
-    posts = (
-        query.order_by(ForumPostDB.created_at.desc(), ForumPostDB.id.desc())
-        .limit(limit)
-        .all()
-    )
-    return {
-        "posts": [_forum_post_payload(post, author_id, db) for post in posts],
-    }
+class FeedbackDB(Base):
+    __tablename__ = "app_feedback"
+    id = Column(Integer, primary_key=True, index=True)
+    area = Column(String(20), nullable=False)
+    text = Column(String(2000), nullable=False)
+    version = Column(String(20), nullable=True)
+    language = Column(String(8), nullable=True)
+    created_at = Column(Float, nullable=False, index=True)
 
 
-@app.post("/community/forum/posts")
-def create_forum_post(
-    data: ForumPostSchema,
-    request: Request,
-    db: Session = Depends(get_db),
-):
-    _allow_forum_write(request)
-    author_name = _validate_forum_identity(data.author_id, data.author_name)
-    text = data.text.replace("\r\n", "\n").strip()
-    if (
-        len(text) > 2000
-        or any(not character.isprintable() and character not in "\n\t" for character in text)
-    ):
-        raise HTTPException(status_code=400, detail="Beiträge dürfen höchstens 2000 Zeichen enthalten.")
-    media_type, media_data = _validate_forum_media(data.media_type, data.media_data)
-    if not text and not media_data:
-        raise HTTPException(status_code=400, detail="Schreibe einen Beitrag oder füge ein Bild hinzu.")
-    post = ForumPostDB(
-        author_id=data.author_id.lower(),
-        author_name=author_name,
-        text=text,
-        media_type=media_type,
-        media_data=media_data,
-        created_at=time.time(),
-    )
-    db.add(post)
+Base.metadata.create_all(bind=engine)
+
+
+class FeedbackSchema(BaseModel):
+    area: str
+    text: constr(min_length=5, max_length=2000)
+    version: constr(max_length=20) = ""
+    language: constr(max_length=8) = ""
+
+
+@app.post("/feedback")
+def send_feedback(data: FeedbackSchema, request: Request, db: Session = Depends(get_db)):
+    now = time.monotonic()
+    stamps = feedback_times.setdefault(client_ip(request), deque())
+    while stamps and now - stamps[0] > 3600:
+        stamps.popleft()
+    if len(stamps) >= 5:
+        raise HTTPException(status_code=429, detail="Danke! Du hast in der letzten Stunde schon genug Feedback geschickt.")
+    stamps.append(now)
+    if len(feedback_times) > 20000:
+        feedback_times.clear()
+    if data.area not in FEEDBACK_AREAS:
+        raise HTTPException(status_code=400, detail="Bitte wähle einen Bereich.")
+    text_value = data.text.replace("\r\n", "\n").strip()
+    if any(not c.isprintable() and c not in "\n\t" for c in text_value):
+        raise HTTPException(status_code=400, detail="Der Text enthält ungültige Zeichen.")
+    db.add(FeedbackDB(area=data.area, text=text_value, version=data.version, language=data.language, created_at=time.time()))
     db.commit()
-    db.refresh(post)
-    return {"post": _forum_post_payload(post, data.author_id.lower(), db)}
+    return {"status": "thanks"}
 
 
-@app.post("/community/forum/posts/{post_id}/comments")
-def create_forum_comment(
-    post_id: int,
-    data: ForumCommentSchema,
-    request: Request,
-    db: Session = Depends(get_db),
-):
-    _allow_forum_write(request)
-    if db.query(ForumPostDB.id).filter(ForumPostDB.id == post_id).first() is None:
-        raise HTTPException(status_code=404, detail="Beitrag nicht gefunden.")
-    author_name = _validate_forum_identity(data.author_id, data.author_name)
-    text = data.text.strip()
-    if (
-        not text
-        or len(text) > 1000
-        or any(not character.isprintable() and character not in "\n\t" for character in text)
-    ):
-        raise HTTPException(status_code=400, detail="Kommentare müssen 1 bis 1000 Zeichen enthalten.")
-    comment = ForumCommentDB(
-        post_id=post_id,
-        author_id=data.author_id.lower(),
-        author_name=author_name,
-        text=text,
-        created_at=time.time(),
-    )
-    db.add(comment)
-    db.commit()
-    db.refresh(comment)
-    return {
-        "comment": {
-            "id": comment.id,
-            "author_name": comment.author_name,
-            "text": comment.text,
-            "created_at": comment.created_at,
-        }
-    }
-
-
-@app.post("/community/forum/posts/{post_id}/reactions")
-def toggle_forum_reaction(
-    post_id: int,
-    data: ForumReactionSchema,
-    request: Request,
-    db: Session = Depends(get_db),
-):
-    _allow_forum_write(request)
-    if db.query(ForumPostDB.id).filter(ForumPostDB.id == post_id).first() is None:
-        raise HTTPException(status_code=404, detail="Beitrag nicht gefunden.")
-    _validate_forum_identity(data.author_id, "Community-Mitglied")
-    if data.emoji not in FORUM_ALLOWED_REACTIONS:
-        raise HTTPException(status_code=400, detail="Dieses Emoji ist nicht verfügbar.")
-    reaction = (
-        db.query(ForumReactionDB)
-        .filter(
-            ForumReactionDB.post_id == post_id,
-            ForumReactionDB.author_id == data.author_id.lower(),
-            ForumReactionDB.emoji == data.emoji,
-        )
-        .first()
-    )
-    if reaction is None:
-        db.add(
-            ForumReactionDB(
-                post_id=post_id,
-                author_id=data.author_id.lower(),
-                emoji=data.emoji,
-            )
-        )
-        active = True
-    else:
-        db.delete(reaction)
-        active = False
-    db.commit()
-    reactions = (
-        db.query(ForumReactionDB)
-        .filter(ForumReactionDB.post_id == post_id)
-        .all()
-    )
-    counts = {}
-    for current in reactions:
-        counts[current.emoji] = counts.get(current.emoji, 0) + 1
-    return {"reactions": counts, "active": active}
-
-
-class SupportChatManager:
-    """In-memory anonymous matchmaking for a single server process."""
-
-    MAX_WAITING_PER_ROLE = 100
-    MAX_IMAGE_SIZE = 500 * 1024
-    MAX_ENCRYPTED_PACKET_SIZE = (
-        ((MAX_IMAGE_SIZE + 2) // 3) * 4 * 4 // 3 + 4096
-    )
-    MAX_ENCRYPTED_CONTENT_SIZE = ((MAX_IMAGE_SIZE + 2) // 3) * 4 + 4096
-    MESSAGE_WINDOW_SECONDS = 10
-    MAX_MESSAGES_PER_WINDOW = 8
-
-    def __init__(self):
-        self.waiting_seekers = []
-        self.waiting_helpers = []
-        self.partners = {}
-        self.lock = asyncio.Lock()
-        self.message_times = {}
-        self.roles = {}
-
-    async def connect(self, websocket: WebSocket, role: str):
-        await websocket.accept()
-        async with self.lock:
-            waiting = (
-                self.waiting_seekers if role == "seeker" else self.waiting_helpers
-            )
-            if len(waiting) >= self.MAX_WAITING_PER_ROLE:
-                await websocket.close(code=1013, reason="Warteschlange ausgelastet")
-                return False
-            waiting.append(websocket)
-            self.message_times[websocket] = deque()
-            self.roles[websocket] = role
-
-            other_queue = (
-                self.waiting_helpers if role == "seeker" else self.waiting_seekers
-            )
-            if not other_queue:
-                await websocket.send_json({"type": "waiting"})
-
-            matches = []
-            while self.waiting_seekers and self.waiting_helpers:
-                seeker = self.waiting_seekers.pop(0)
-                helper = self.waiting_helpers.pop(0)
-                self.partners[seeker] = helper
-                self.partners[helper] = seeker
-                matches.append((seeker, helper))
-
-        for seeker, helper in matches:
-            await self._notify_match(seeker, helper)
-        return True
-
-    async def _notify_match(self, seeker: WebSocket, helper: WebSocket):
-        try:
-            await seeker.send_json({"type": "connected", "role": "seeker"})
-            await helper.send_json({"type": "connected", "role": "helper"})
-        except (RuntimeError, WebSocketDisconnect):
-            await self.disconnect(seeker)
-            await self.disconnect(helper)
-
-    async def relay_packet(self, websocket: WebSocket, packet: dict):
-        async with self.lock:
-            partner = self.partners.get(websocket)
-        if partner is None:
-            await websocket.send_json(
-                {"type": "error", "message": "Noch kein Partner verbunden."}
-            )
-            return
-        try:
-            await partner.send_json(packet)
-        except (RuntimeError, WebSocketDisconnect):
-            await self.disconnect(partner)
-
-    def make_outgoing_packet(self, role: str, packet: dict):
-        if role not in {"seeker", "helper"}:
-            return None
-        packet_type = packet.get("type")
-        if packet_type == "key_exchange":
-            public_key = packet.get("public_key")
-            if not isinstance(public_key, str) or len(public_key) != 44:
-                return None
-            try:
-                decoded_key = base64.b64decode(public_key, validate=True)
-            except (binascii.Error, ValueError):
-                return None
-            if len(decoded_key) != 32:
-                return None
-            return {
-                "type": "key_exchange",
-                "public_key": public_key,
-                "role": role,
-            }
-        if packet_type == "secure_message":
-            envelope = packet.get("envelope")
-            if (
-                not isinstance(envelope, str)
-                or not envelope
-                or len(envelope) > self.MAX_ENCRYPTED_PACKET_SIZE
-            ):
-                return None
-            try:
-                decoded_envelope = base64.b64decode(envelope, validate=True)
-            except (binascii.Error, ValueError):
-                return None
-            if len(decoded_envelope) > self.MAX_ENCRYPTED_CONTENT_SIZE:
-                return None
-            return {
-                "type": "secure_message",
-                "envelope": envelope,
-                "role": role,
-            }
-        return None
-
-    async def allow_message(self, websocket: WebSocket) -> bool:
-        now = time.monotonic()
-        async with self.lock:
-            times = self.message_times.get(websocket)
-            if times is None:
-                return False
-            while times and now - times[0] > self.MESSAGE_WINDOW_SECONDS:
-                times.popleft()
-            if len(times) >= self.MAX_MESSAGES_PER_WINDOW:
-                return False
-            times.append(now)
-            return True
-
-    async def disconnect(self, websocket: WebSocket):
-        async with self.lock:
-            for waiting in (self.waiting_seekers, self.waiting_helpers):
-                if websocket in waiting:
-                    waiting.remove(websocket)
-            self.message_times.pop(websocket, None)
-            self.roles.pop(websocket, None)
-            partner = self.partners.pop(websocket, None)
-            if partner is not None:
-                self.partners.pop(partner, None)
-                self.roles.pop(partner, None)
-
-        if partner is not None:
-            try:
-                await partner.send_json({"type": "disconnected"})
-            except (RuntimeError, WebSocketDisconnect):
-                pass
-
-
-chat_manager = SupportChatManager()
-
-
-@app.websocket("/ws/support-chat/{role}")
-async def support_chat_websocket(websocket: WebSocket, role: str):
-    if role not in {"seeker", "helper"}:
-        await websocket.close(code=1008, reason="Ungültige Chat-Rolle")
-        return
-    if websocket.headers.get("origin"):
-        await websocket.close(code=1008, reason="Browser-Origin nicht erlaubt")
-        return
-
-    connected = await chat_manager.connect(websocket, role)
-    if not connected:
-        return
-    try:
-        while True:
-            raw_packet = await websocket.receive_text()
-            if (
-                len(raw_packet.encode("utf-8"))
-                > chat_manager.MAX_ENCRYPTED_PACKET_SIZE + 256
-            ):
-                await websocket.send_json(
-                    {"type": "error", "message": "Nachricht ist zu lang."}
-                )
-                continue
-            try:
-                packet = json.loads(raw_packet)
-            except json.JSONDecodeError:
-                await websocket.send_json(
-                    {"type": "error", "message": "Ungültiges Nachrichtenformat."}
-                )
-                continue
-            if not isinstance(packet, dict):
-                await websocket.send_json(
-                    {"type": "error", "message": "Ungültiges Nachrichtenformat."}
-                )
-                continue
-            packet_type = packet.get("type")
-            if packet_type not in {"key_exchange", "secure_message"}:
-                await websocket.send_json(
-                    {"type": "error", "message": "Unbekannter Nachrichtentyp."}
-                )
-                continue
-            if not await chat_manager.allow_message(websocket):
-                await websocket.send_json(
-                    {"type": "error", "message": "Bitte sende langsamer."}
-                )
-                continue
-            role = chat_manager.roles.get(websocket)
-            outgoing = chat_manager.make_outgoing_packet(role, packet)
-            if outgoing is None:
-                await websocket.send_json(
-                    {"type": "error", "message": "Ungültige oder zu große Nachricht."}
-                )
-                continue
-            await chat_manager.relay_packet(websocket, outgoing)
-    except WebSocketDisconnect:
-        await chat_manager.disconnect(websocket)
+@app.get("/admin/feedback")
+def read_feedback(x_admin_token: Optional[str] = Header(default=None), db: Session = Depends(get_db)):
+    """Only for the developer: set FEEDBACK_ADMIN_TOKEN on the server and send it as X-Admin-Token."""
+    expected = os.getenv("FEEDBACK_ADMIN_TOKEN", "")
+    if len(expected) < 16 or not x_admin_token or not hmac.compare_digest(x_admin_token, expected):
+        raise HTTPException(status_code=404, detail="Not Found")
+    rows = db.query(FeedbackDB).order_by(FeedbackDB.id.desc()).limit(300).all()
+    return {"feedback": [{"id": row.id, "area": row.area, "text": row.text, "version": row.version, "language": row.language, "created_at": row.created_at} for row in rows]}
 
 
 import social  # noqa: E402,F401  (registers the /community/social/* routes)

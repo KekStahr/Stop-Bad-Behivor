@@ -65,7 +65,11 @@ assert.ok(Math.abs(qibla(52.52, 13.405) - 136) < 2); // Berlin → about 136° (
 const content = await import("../gui/faith/content.js");
 const data = await import("../gui/faith/data.js");
 assert.equal(content.ASMA.length, 99);
-assert.equal(content.STEPS.length, 12);
+// tracker and counter ids are per religion – one shared id would count a prayer for both
+for (const table of [data.TRACKER, data.COUNTERS]) {
+  const islamIds = new Set(table.islam.map((item) => item.id));
+  assert.deepEqual(table.christian.filter((item) => islamIds.has(item.id)).map((item) => item.id), []);
+}
 assert.equal(content.FREEDOM.length, 21);
 const inRange = (target) => (target.surah
   ? target.surah >= 1 && target.surah <= 114 && (target.ayah || 1) <= data.SURAH_AYAHS[target.surah - 1]

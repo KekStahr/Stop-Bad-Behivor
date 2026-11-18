@@ -1,0 +1,63 @@
+/* Android: the desktop sidebar becomes a bottom tab bar; everything gets one column. */
+html, body { overscroll-behavior: none; }
+.app-shell {
+  display: block !important;
+  min-height: 100vh;
+}
+.sidebar {
+  position: fixed !important;
+  inset: auto 0 0 0;
+  z-index: 50;
+  height: calc(64px + env(safe-area-inset-bottom));
+  padding: 6px 6px env(safe-area-inset-bottom) !important;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  border-top: 0.5px solid var(--separator);
+  border-right: 0 !important;
+  background: color-mix(in srgb, var(--bg, #000) 88%, transparent);
+  backdrop-filter: none !important;
+}
+.sidebar > :not(.nav):not(.sos-button) { display: none !important; }
+.sidebar .nav {
+  flex: 1;
+  display: flex !important;
+  flex-direction: row !important;
+  justify-content: space-around;
+  gap: 0 !important;
+}
+.nav-indicator { display: none !important; }
+.nav-link {
+  flex: 1;
+  flex-direction: column !important;
+  gap: 2px !important;
+  padding: 6px 2px !important;
+  font-size: 0.64rem !important;
+  justify-content: center;
+}
+.nav-link span { display: block !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 64px; }
+.sos-button {
+  position: fixed !important;
+  right: 14px;
+  bottom: calc(76px + env(safe-area-inset-bottom));
+  width: 56px;
+  height: 56px;
+  padding: 0 !important;
+  border-radius: 50% !important;
+  justify-content: center;
+  box-shadow: 0 6px 20px rgba(255, 59, 48, 0.45);
+}
+.sos-button span { display: none !important; }
+.main { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
+.page { padding: 18px 14px 40px !important; }
+.page-header { flex-wrap: wrap; gap: 10px; }
+.header-actions #open-palette { display: none; }
+.widget.w-s, .widget.w-m, .widget.w-l { grid-column: span 6 !important; }
+.widget-bar { flex-wrap: wrap; }
+.split-grid, .highlight-grid, .settings-layout, .chat-layout, .timer-card, .faith-header { grid-template-columns: 1fr !important; }
+.settings-nav { display: none !important; }
+.timer-card { padding: 20px !important; gap: 20px !important; }
+.sheet, .sheet-wide { width: calc(100vw - 16px) !important; max-height: calc(100vh - 24px) !important; }
+.wave-pill { bottom: calc(80px + env(safe-area-inset-bottom)) !important; left: 12px; right: 82px; }
+.faith-tabs { overflow-x: auto; flex-wrap: nowrap !important; }
+.runner-stage { height: 300px; }

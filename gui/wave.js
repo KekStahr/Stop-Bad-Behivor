@@ -44,9 +44,15 @@ export function startWavePill({ api }) {
     pill.hidden = left === null || Boolean(document.querySelector("dialog[open].sos-sheet"));
     if (left === null) return;
     pill.classList.toggle("is-done", left <= 0);
-    pill.innerHTML = left > 0
+    // only touch the DOM when something changed – rewriting restarts the icon animation every second
+    const html = left > 0
       ? `<span class="wave-pill-icon">🌊</span><span>Welle aussitzen</span><strong>${formatClock(left)}</strong>`
-      : `<span class="wave-pill-icon">🏄</span><span>Geschafft! Welle bestätigen</span><strong>→</strong>`;
+      : '<span class="wave-pill-icon">🏄</span><span>Geschafft! Welle bestätigen</span><strong>→</strong>';
+    if (left > 0 && pill.querySelector("strong") && pill.dataset.state === "run") pill.querySelector("strong").textContent = formatClock(left);
+    else if (pill.dataset.state !== (left > 0 ? "run" : "done")) {
+      pill.dataset.state = left > 0 ? "run" : "done";
+      pill.innerHTML = html;
+    }
   };
   onWave(render);
   setInterval(render, 1000);

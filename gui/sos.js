@@ -10,7 +10,7 @@ import { startWave, cancelWave, completeWave, waveRemaining, currentWave, format
 const HALT = [
   { id: "hungry", emoji: "🍎", label: "Hungrig", tip: "Iss jetzt etwas Kleines – ein niedriger Blutzucker lässt Verlangen viel stärker wirken." },
   { id: "angry", emoji: "😤", label: "Wütend", tip: "Schreib die Wut ungefiltert auf, beweg dich 5 Minuten kräftig oder atme 4-7-8. Wut darf da sein – sie muss nicht handeln." },
-  { id: "lonely", emoji: "🫂", label: "Einsam", tip: "Schreib jetzt einem Freund oder der Community. Eine einzige Nachricht verändert oft den ganzen Abend." },
+  { id: "lonely", emoji: "👥", label: "Einsam", tip: "Schreib jetzt einem Freund oder der Community. Eine einzige Nachricht verändert oft den ganzen Abend." },
   { id: "tired", emoji: "😴", label: "Müde", tip: "Müdigkeit senkt die Selbstkontrolle stark. Leg dich 20 Minuten hin oder geh heute früher schlafen." },
 ];
 
@@ -62,7 +62,7 @@ export function openSos({ goTo } = {}) {
             <li><strong>Fünf Dinge</strong> benennen, die du siehst</li>
           </ul>
           <div class="button-row">
-            <button class="button button-secondary small" id="sos-game" type="button">🎈 Ablenken</button>
+            <button class="button button-secondary small" id="sos-game" type="button">🏃 Ablenk-Spiel</button>
             <button class="button button-secondary small" id="sos-community" type="button">💬 Schreiben</button>
           </div>
         </section>
@@ -75,6 +75,10 @@ export function openSos({ goTo } = {}) {
       <section class="halt">
         <span class="eyebrow">Was steckt gerade dahinter? (HALT)</span>
         <div class="halt-row">${HALT.map((item) => `<button type="button" class="halt-chip" data-halt="${item.id}"><span>${item.emoji}</span>${item.label}</button>`).join("")}</div>
+        <form class="halt-own" id="halt-own">
+          <input id="halt-own-text" type="text" maxlength="120" placeholder="Etwas anderes? Schreib es selbst hin …" aria-label="Was steckt dahinter – eigene Worte">
+          <button class="button button-secondary small" type="submit">Benennen</button>
+        </form>
         <p class="halt-tip" id="halt-tip" hidden></p>
       </section>
 
@@ -199,6 +203,14 @@ export function openSos({ goTo } = {}) {
     tip.hidden = false;
     tip.textContent = item.tip;
   }));
+  dialog.querySelector("#halt-own").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const text = dialog.querySelector("#halt-own-text").value.trim();
+    if (!text) return;
+    dialog.querySelectorAll("[data-halt]").forEach((chip) => chip.classList.remove("is-selected"));
+    tip.hidden = false;
+    tip.textContent = `„${text}“ – gut, dass du es benennst. Was du benennen kannst, steuert dich weniger. Was ist ein kleiner Schritt, der genau dagegen hilft – jetzt, in den nächsten 5 Minuten?`;
+  });
 
   dialog.querySelector("#sos-game").addEventListener("click", () => openBubbles());
   dialog.querySelector("#sos-helper").addEventListener("click", () => {

@@ -116,22 +116,6 @@ export const STORIES = [
   { religion: "christian", title: "Jesus und die Frau, die gesündigt hatte", icon: "🕊️", ref: "Johannes 8,1–11", target: { book: 43, chapter: 8, verse: 1 }, text: "Alle wollten Steine werfen. Jesus sagte: „Wer von euch ohne Sünde ist, werfe den ersten Stein.“ Einer nach dem anderen ging. Zu ihr sagte er: „So verdamme ich dich auch nicht; geh hin und sündige nicht mehr.“", lesson: "Gnade kommt zuerst – dann die Kraft, neu zu leben." },
 ];
 
-// ---- 12 Schritte im Glauben (angelehnt an christliche 12-Schritte-Gruppen und Millati Islami) ------
-export const STEPS = [
-  { title: "Ehrlich werden", christian: "Ich gebe zu, dass ich meiner Sucht gegenüber machtlos bin und mein Leben aus dem Gleichgewicht geraten ist.", islam: "Ich erkenne meine Schwäche an – der Mensch wurde schwach erschaffen (4:28) – und dass ich so nicht weitermachen kann.", prompt: "Wo hat die Sucht mein Leben bestimmt?" },
-  { title: "Hoffnung fassen", christian: "Ich glaube, dass Gott mich heilen und mein Leben wieder ordnen kann.", islam: "Ich glaube, dass Allah mich heilen kann und Seine Barmherzigkeit größer ist als meine Fehler (39:53).", prompt: "Woran merke ich schon heute, dass Veränderung möglich ist?" },
-  { title: "Mich anvertrauen", christian: "Ich entscheide mich, meinen Willen und mein Leben der Sorge Gottes anzuvertrauen.", islam: "Ich entscheide mich, mich Allah hinzugeben und auf Ihn zu vertrauen (Tawakkul).", prompt: "Was fällt mir am schwersten loszulassen?" },
-  { title: "Ehrlich hinschauen", christian: "Ich schaue ohne Angst auf mein Leben – auf Gutes wie Schlechtes.", islam: "Ich halte Muḥāsaba: Ich ziehe mich selbst zur Rechenschaft, bevor ich zur Rechenschaft gezogen werde.", prompt: "Welche Muster wiederholen sich bei mir?" },
-  { title: "Bekennen", christian: "Ich bekenne Gott, mir selbst und einem Menschen meines Vertrauens meine Fehler (Jakobus 5,16).", islam: "Ich bekenne Allah meine Fehler im Duʿāʾ und spreche mit einem vertrauenswürdigen Menschen über meinen Weg – ohne mich bloßzustellen.", prompt: "Mit wem kann ich ehrlich sprechen?" },
-  { title: "Bereit werden", christian: "Ich bin bereit, Gott meine Schwächen nehmen zu lassen.", islam: "Ich bin bereit, mit Allahs Hilfe meine schlechten Gewohnheiten abzulegen.", prompt: "Welche Schwäche möchte ich als Erstes abgeben?" },
-  { title: "Demütig bitten", christian: "Ich bitte Gott demütig, mich von meinen Fehlern zu befreien.", islam: "Ich bitte Allah demütig um Vergebung (Istighfār) und um Kraft.", prompt: "Schreib dein persönliches Gebet dafür." },
-  { title: "Aufschreiben", christian: "Ich schreibe auf, wem ich durch meine Sucht geschadet habe, und bin bereit, es gutzumachen.", islam: "Ich schreibe auf, wessen Rechte ich durch meine Sucht verletzt habe – auch das gehört zur Tauba.", prompt: "Wen habe ich verletzt?" },
-  { title: "Wiedergutmachen", christian: "Ich mache Schaden wieder gut, wo immer es möglich ist, ohne andere dadurch zu verletzen.", islam: "Ich gebe zurück, was ich anderen schulde, und bitte um Verzeihung, wo es möglich ist.", prompt: "Was ist mein erster Schritt der Wiedergutmachung?" },
-  { title: "Täglich prüfen", christian: "Ich prüfe jeden Abend mein Leben (Examen) und gebe Fehler sofort zu.", islam: "Ich halte jeden Abend Muḥāsaba und bitte sofort um Vergebung, wenn ich falle.", prompt: "Was lief heute gut – was nicht?" },
-  { title: "Nähe suchen", christian: "Ich suche durch Gebet, Bibel und Stille die Nähe zu Gott.", islam: "Ich suche durch Ṣalāh, Dhikr und Koran die Nähe zu Allah.", prompt: "Wann und wo bete ich ab jetzt jeden Tag?" },
-  { title: "Weitergeben", christian: "Ich gebe weiter, was ich empfangen habe, und helfe anderen auf ihrem Weg.", islam: "Ich gebe weiter, was mir geschenkt wurde, und stehe anderen bei – der Gläubige ist für den Gläubigen wie ein Gebäude.", prompt: "Wem kann ich auf seinem Weg helfen?" },
-];
-
 // ---- Reading plans ------------------------------------------------------------------------------
 const JUZ = [[1, 1], [2, 142], [2, 253], [3, 93], [4, 24], [4, 148], [5, 82], [6, 111], [7, 88], [8, 41], [9, 93], [11, 6], [12, 53], [15, 1], [17, 1],
   [18, 75], [21, 1], [23, 1], [25, 21], [27, 56], [29, 46], [33, 31], [36, 28], [39, 32], [41, 47], [46, 1], [51, 31], [58, 1], [67, 1], [78, 1]];

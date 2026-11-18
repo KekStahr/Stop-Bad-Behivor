@@ -20,8 +20,11 @@ export const DEFAULT_PREFS = {
   counterStyle: "rings",
   showSeconds: true,
   showWhy: true,
-  showMetrics: true,
-  showGoal: true,
+  donateNextAt: 0, // overview asks for support about twice a week (donate.js)
+  donateShownDay: "",
+  donateDismissedDay: "",
+  donateSnoozeUntil: 0,
+  homeWidgets: "", // JSON list of { id, size } – empty: the house layout (widgets.js)
   showQuote: true,
   privacyMode: false,
   greeting: true,
@@ -59,6 +62,7 @@ export const DEFAULT_PREFS = {
   ifThenPlan: "Wenn ich Verlangen bekomme, dann trinke ich ein Glas Wasser und gehe 10 Minuten an die frische Luft.\nWenn ich mich einsam fühle, dann schreibe ich jemandem aus der Community.\nWenn ich abends unruhig werde, dann starte ich eine Fokus-Session.",
   triggerCategories: "",
   onboarded: false,
+  language: "", // empty until chosen – see i18n.js
   celebratedMilestone: 0,
 
   helperEnabled: false,
@@ -130,7 +134,7 @@ export function resetPrefs() {
   return savePrefs();
 }
 
-async function savePrefs() {
+export async function savePrefs() {
   try {
     localStorage.setItem(CACHE_KEY, JSON.stringify(prefs));
   } catch {

@@ -86,8 +86,8 @@ function createMonitor({ onTrigger, onStress }) {
     }
   }
 
-  function configure({ triggerWords = [], stressDetection = false, layout = "de" }) {
-    words = compile(triggerWords.map((word) => String(word).toLowerCase()).filter(Boolean));
+  function configure({ triggerWords = [], ownWords = [], stressDetection = false, layout = "de" }) {
+    words = compile(triggerWords.map((word) => String(word).toLowerCase()).filter(Boolean), new Set(ownWords.map((word) => String(word).toLowerCase())));
     stress = Boolean(stressDetection);
     keyMap = buildKeyMap(layout);
   }

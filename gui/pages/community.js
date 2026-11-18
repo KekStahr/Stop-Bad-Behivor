@@ -1,6 +1,6 @@
 import { escapeHtml } from "../api.js";
 import { prefs, formatTime } from "../prefs.js";
-import { confirmSheet, chime, openSheet } from "../ui.js";
+import { confirmSheet, chime, openSheet, notify } from "../ui.js";
 import { ADDICTIONS } from "../recovery.js";
 import { socialProfile } from "../help.js";
 import { renderCrisis, setPendingCrisis } from "./crisis.js";
@@ -24,15 +24,19 @@ export function openCrisisTab(detail) {
 
 const EMOJIS = ["😊", "😂", "🥲", "😍", "🤗", "😢", "😭", "😤", "😴", "🤔", "🙏", "💪", "❤️", "💙", "💚", "🫂", "🔥", "✨", "🌱", "🌊",
   "☀️", "🌙", "🎉", "🏆", "👏", "👍", "🙌", "🤝", "✅", "💯", "🍀", "🌈", "🕊️", "⭐", "💤", "☕", "🍵", "🏃", "🧘", "🎧"];
-const REACTIONS = ["💪", "❤️", "🙏", "🔥", "🫂"];
+// same set as the server; the first six are the quick picks
+const REACTIONS = ["💪", "❤️", "🙏", "🔥", "👍", "😂", "👏", "🙌", "😊", "🥰", "😢", "😮", "🤝", "💯", "✨", "🌱",
+  "🏆", "⭐", "🎉", "💚", "💙", "🌈", "☀️", "🕊️", "🤲", "✝️", "☪️", "👀", "😴"];
+const MENTION = /@([\p{L}\p{N}_.-]{2,32})/gu;
+const mentions = (text, name) => Boolean(name) && [...String(text || "").matchAll(MENTION)].some(([, who]) => who.toLowerCase() === name.toLowerCase());
 const URL_SPLIT = /((?:https?:\/\/|www\.)[^\s]+)/gi;
 const MAX_IMAGE = 500 * 1024;
 
 // Escapes text and turns links into buttons that ask before opening.
-function richText(text) {
+function richText(text, myName = "") {
   return String(text || "").split(URL_SPLIT).map((part, index) => (index % 2
     ? `<button type="button" class="link-chip" data-link="${escapeHtml(part)}">🔗 ${escapeHtml(part.length > 48 ? `${part.slice(0, 45)}…` : part)}</button>`
-    : escapeHtml(part))).join("");
+    : escapeHtml(part).replace(MENTION, (all, who) => `<span class="mention ${who.toLowerCase() === myName.toLowerCase() ? "is-me" : ""}">${all}</span>`))).join("");
 }
 
 const LAST_READ_KEY = "reso:lastRead";
@@ -71,6 +75,10 @@ export async function render(root, { api, showToast, goTo }) {
   let socialError = "";
   let messages = [];
   let lastId = 0;
+  let replyTo = null; // message being answered
+  let setReply = () => {}; // set up once the composer exists
+  let insertMention = () => {};
+  const myName = () => social?.me?.name || "";
   let pollTimer;
   let alive = true;
   let syncing = false;
@@ -145,6 +153,26 @@ export async function render(root, { api, showToast, goTo }) {
       socialError = "";
       if (requestedRoom === room && result.room) {
         const fresh = result.messages.filter((message) => message.id > lastId);
+        // groups keep 7 days, private chats 2 months – the same as on the server
+        const keep = (room.startsWith("d:") ? 60 : 7) * 86400;
+        const cutoff = Date.now() / 1000 - keep;
+        if (messages.some((message) => message.created_at < cutoff)) {
+          messages = messages.filter((message) => message.created_at >= cutoff);
+          renderMessages(true);
+        }
+        // drop messages their author deleted (the server lists the ids still there)
+        if (lastId > 0 && result.recent_ids?.length) {
+          const present = new Set(result.recent_ids);
+          const oldest = Math.min(...result.recent_ids);
+          const before = messages.length;
+          messages = messages.filter((message) => message.id < oldest || present.has(message.id));
+          if (messages.length !== before) renderMessages(true);
+        }
+        const called = lastId > 0 ? fresh.find((message) => !message.mine && mentions(message.text, result.me?.name)) : null;
+        if (called) {
+          notify(`${called.sender_name} hat dich erwähnt`, called.text.slice(0, 120));
+          if (prefs.chatSound) chime("message");
+        }
         if (fresh.length) {
           const incoming = lastId > 0 && fresh.some((message) => !message.mine);
           messages = messages.concat(fresh);
@@ -309,6 +337,8 @@ export async function render(root, { api, showToast, goTo }) {
           <div class="attachment" id="attachment" hidden><img id="attachment-preview" alt="Anhang"><button class="icon-button" id="attachment-remove" type="button" aria-label="Anhang entfernen">×</button></div>
           <div class="emoji-panel" id="emoji-panel" hidden>${EMOJIS.map((emoji) => `<button type="button" data-emoji="${emoji}">${emoji}</button>`).join("")}</div>
           <p class="link-hint" id="link-hint" hidden>⚠️ Links werden anderen mit Warnhinweis angezeigt. Teile keine persönlichen Daten.</p>
+          <div class="reply-bar" id="reply-bar" hidden></div>
+          <div class="mention-list" id="mention-list" hidden role="listbox" aria-label="Personen erwähnen"></div>
           <form class="composer" id="composer">
             <button class="composer-tool" id="emoji-toggle" type="button" aria-label="Emoji einfügen" title="Emoji">😊</button>
             <label class="composer-tool" title="Bild oder GIF senden" aria-label="Bild oder GIF senden">🖼️<input id="image-input" type="file" accept="image/png,image/jpeg,image/gif" hidden></label>
@@ -317,7 +347,7 @@ export async function render(root, { api, showToast, goTo }) {
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg>
             </button>
           </form>
-          <p class="composer-hint">${prefs.chatEnterSend ? "Enter sendet · Shift + Enter für neue Zeile" : "Strg + Enter sendet"} · Sei freundlich. Teile keine persönlichen Daten.</p>
+          <p class="composer-hint">${prefs.chatEnterSend ? "Enter sendet · Shift + Enter für neue Zeile" : "Strg + Enter sendet"} · Sei freundlich. Teile keine persönlichen Daten. · ${room.startsWith("d:") ? "Privatnachrichten werden nach 2 Monaten gelöscht." : "Nachrichten in Gruppen werden nach 7 Tagen gelöscht."}</p>
         </section>
       </div>`;
     renderRoomList();
@@ -374,8 +404,45 @@ export async function render(root, { api, showToast, goTo }) {
       grow();
     });
     bindMessageActions(container.querySelector("#messages"));
-    input.addEventListener("input", grow);
+    const mentionList = container.querySelector("#mention-list");
+    // "@" + letters: suggest people who wrote in this room (and friends)
+    const suggestMentions = () => {
+      const typed = input.value.slice(0, input.selectionStart).match(/@([\p{L}\p{N}_.-]{0,32})$/u);
+      if (!typed || !/^[cf]:/.test(room)) { mentionList.hidden = true; return; }
+      const names = [...new Set([...messages.slice().reverse().map((item) => item.sender_name), ...(social?.friends || []).map((friend) => friend.name)])]
+        .filter((name) => name && name !== myName() && !/\s/.test(name) && name.toLowerCase().startsWith(typed[1].toLowerCase())).slice(0, 6);
+      mentionList.hidden = !names.length;
+      mentionList.innerHTML = names.map((name, i) => `<button type="button" role="option" class="${i === 0 ? "is-active" : ""}" data-pick-mention="${escapeHtml(name)}">@${escapeHtml(name)}</button>`).join("");
+    };
+    insertMention = (name) => {
+      const caret = input.selectionStart ?? input.value.length;
+      const before = input.value.slice(0, caret).replace(/@[\p{L}\p{N}_.-]{0,32}$/u, "");
+      input.value = `${before}@${name} ${input.value.slice(caret)}`;
+      mentionList.hidden = true;
+      input.focus();
+      grow();
+    };
+    mentionList.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-pick-mention]");
+      if (button) insertMention(button.dataset.pickMention);
+    });
+    setReply = (message) => {
+      replyTo = message;
+      const bar = container.querySelector("#reply-bar");
+      bar.hidden = !message;
+      if (message) {
+        bar.innerHTML = `<span>↩ Antwort an <b>${escapeHtml(message.sender_name)}</b>: ${escapeHtml((message.text || "🖼️").slice(0, 80))}</span><button type="button" class="icon-button" aria-label="Antwort abbrechen">×</button>`;
+        bar.querySelector("button").addEventListener("click", () => setReply(null));
+        input.focus();
+      }
+    };
+    input.addEventListener("input", () => { grow(); suggestMentions(); });
     input.addEventListener("keydown", (event) => {
+      if (!mentionList.hidden && (event.key === "Tab" || event.key === "Enter")) {
+        const first = mentionList.querySelector("[data-pick-mention]");
+        if (first) { event.preventDefault(); insertMention(first.dataset.pickMention); return; }
+      }
+      if (event.key === "Escape") { mentionList.hidden = true; if (replyTo) setReply(null); }
       if (event.key !== "Enter") return;
       const wantsSend = prefs.chatEnterSend ? !event.shiftKey : event.ctrlKey || event.metaKey;
       if (wantsSend) {
@@ -389,7 +456,8 @@ export async function render(root, { api, showToast, goTo }) {
       if (!text && !attachment) return;
       send.disabled = true;
       try {
-        await api("/api/community/social/messages", { method: "POST", body: { room, text, ...(attachment || {}), ...socialProfile() } });
+        await api("/api/community/social/messages", { method: "POST", body: { room, text, reply_to: replyTo?.id || null, ...(attachment || {}), ...socialProfile() } });
+        setReply(null);
         attachment = null;
         attachmentBox.hidden = true;
         emojiPanel.hidden = true;
@@ -502,18 +570,22 @@ export async function render(root, { api, showToast, goTo }) {
         const newDay = !previous || new Date(previous.created_at * 1000).toDateString() !== date.toDateString();
         return `
           ${newDay ? `<div class="day-divider"><span>${new Intl.DateTimeFormat("de-DE", { weekday: "long", day: "numeric", month: "long" }).format(date)}</span></div>` : ""}
-          <div class="message ${message.mine ? "is-mine" : ""} ${grouped && !newDay ? "is-grouped" : ""} ${start > 0 ? "is-new" : ""}" data-message="${message.id}">
+          <div class="message ${message.mine ? "is-mine" : ""} ${grouped && !newDay ? "is-grouped" : ""} ${start > 0 ? "is-new" : ""} ${!message.mine && mentions(message.text, myName()) ? "is-mention" : ""}" data-message="${message.id}">
             ${!message.mine ? (grouped && !newDay ? '<span class="avatar-spacer"></span>' : avatar(message.sender_name, message.sender_code, "small")) : ""}
             <div class="bubble-wrap">
               ${!message.mine && !(grouped && !newDay) && /^[cf]:/.test(room) ? `<span class="sender">${escapeHtml(message.sender_name)}</span>` : ""}
               ${message.has_link && !message.mine ? '<div class="link-warning">⚠️ Enthält einen Link. Öffne ihn nur, wenn du der Person vertraust – gib niemals Passwörter oder persönliche Daten ein.</div>' : ""}
               ${message.media_data ? `<img class="chat-image" src="data:${escapeHtml(message.media_type)};base64,${message.media_data}" alt="Bild von ${escapeHtml(message.sender_name)}" loading="lazy">` : ""}
-              ${message.text ? `<div class="bubble">${richText(message.text)}</div>` : ""}
+              ${message.reply ? `<button type="button" class="reply-quote" data-jump="${message.reply.id}"><b>↩ ${escapeHtml(message.reply.sender_name)}</b>${escapeHtml(message.reply.text)}</button>` : ""}
+              ${message.text ? `<div class="bubble">${richText(message.text, myName())}</div>` : ""}
               <div class="message-meta">
                 ${prefs.chatTimestamps ? `<time>${formatTime(date)}</time>` : ""}
                 <span class="reactions" data-reactions="${message.id}">${reactionChips(message)}</span>
                 <span class="message-actions">
-                  <button type="button" class="message-action" data-react-open="${message.id}" title="Reagieren" aria-label="Reagieren">＋</button>
+                  <button type="button" class="message-action" data-react-open="${message.id}" title="Reagieren" aria-label="Reagieren">😊</button>
+                  <button type="button" class="message-action" data-reply="${message.id}" title="Antworten" aria-label="Antworten">↩</button>
+                  ${!message.mine && /^[cf]:/.test(room) ? `<button type="button" class="message-action" data-mention="${escapeHtml(message.sender_name)}" title="Erwähnen" aria-label="Erwähnen">@</button>` : ""}
+                  ${message.mine ? `<button type="button" class="message-action" data-delete="${message.id}" title="Löschen" aria-label="Löschen">🗑</button>` : ""}
                   ${message.mine ? "" : `<button type="button" class="message-action" data-report="${message.id}" data-code="${message.sender_code}" data-name="${escapeHtml(message.sender_name)}" title="Melden oder blockieren" aria-label="Melden oder blockieren">⋯</button>`}
                 </span>
               </div>
@@ -607,13 +679,42 @@ export async function render(root, { api, showToast, goTo }) {
       const opener = event.target.closest("[data-react-open]");
       if (opener) {
         box.querySelectorAll(".reaction-picker").forEach((picker) => picker.remove());
-        opener.insertAdjacentHTML("afterend", `<span class="reaction-picker">${REACTIONS.map((emoji) => `<button type="button" data-pick="${opener.dataset.reactOpen}" data-emoji="${emoji}">${emoji}</button>`).join("")}</span>`);
+        opener.insertAdjacentHTML("afterend", `<span class="reaction-picker" role="menu">${REACTIONS.map((emoji) => `<button type="button" data-pick="${opener.dataset.reactOpen}" data-emoji="${emoji}" aria-label="Mit ${emoji} reagieren">${emoji}</button>`).join("")}</span>`);
         return undefined;
       }
       const pick = event.target.closest("[data-pick]");
       if (pick) {
         pick.parentElement.remove();
         return react(pick.dataset.pick, pick.dataset.emoji);
+      }
+      const jump = event.target.closest("[data-jump]");
+      if (jump) {
+        const target = box.querySelector(`[data-message="${jump.dataset.jump}"]`);
+        if (target) { target.scrollIntoView({ behavior: "smooth", block: "center" }); target.classList.add("is-flash"); setTimeout(() => target.classList.remove("is-flash"), 1600); }
+        return undefined;
+      }
+      const replyButton = event.target.closest("[data-reply]");
+      if (replyButton) {
+        const original = messages.find((item) => item.id === Number(replyButton.dataset.reply));
+        if (original) setReply(original);
+        return undefined;
+      }
+      const mention = event.target.closest("[data-mention]");
+      if (mention) {
+        insertMention(mention.dataset.mention);
+        return undefined;
+      }
+      const remove = event.target.closest("[data-delete]");
+      if (remove) {
+        if (!(await confirmSheet({ title: "Nachricht löschen?", text: "Sie verschwindet für alle. Das lässt sich nicht rückgängig machen.", confirmLabel: "Löschen", danger: true }))) return undefined;
+        try {
+          await api("/api/community/social/messages/delete", { method: "POST", body: { message_id: Number(remove.dataset.delete), ...socialProfile() } });
+          messages = messages.filter((item) => item.id !== Number(remove.dataset.delete));
+          renderMessages(true);
+        } catch (error) {
+          showToast(error.message, true);
+        }
+        return undefined;
       }
       const report = event.target.closest("[data-report]");
       if (report) reportOrBlock(report);
@@ -892,7 +993,7 @@ export async function render(root, { api, showToast, goTo }) {
             <div class="rule" style="--tone:var(--pink)"><span>💗</span><strong>Mitgefühl</strong><small>Niemand wird verurteilt. Rückfälle gehören für viele dazu.</small></div>
             <div class="rule" style="--tone:var(--orange)"><span>🚫</span><strong>Kein Konsum-Talk</strong><small>Keine Bezugsquellen, keine Verherrlichung.</small></div>
             <div class="rule" style="--tone:var(--indigo)"><span>🔒</span><strong>Privatsphäre</strong><small>Teile keine Adressen, Nummern oder Passwörter.</small></div>
-            <div class="rule" style="--tone:var(--red)"><span>🛟</span><strong>Echte Hilfe</strong><small>Die Community ersetzt keine Profis. Notfall: 112.</small></div>
+            <div class="rule" style="--tone:var(--red)"><span>🆘</span><strong>Echte Hilfe</strong><small>Die Community ersetzt keine Profis. Notfall: 112.</small></div>
           </div>
         </section>
       </div>`;

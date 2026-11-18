@@ -3,16 +3,20 @@ import { faith, loadFaith, activeReligions, prayerConfig } from "../faith/state.
 import { verseOfDay } from "../faith/data.js";
 import { nextPrayer, formatClock } from "../faith/calc.js";
 import { loadVerse } from "../faith/ui.js";
-import { prefs, setPref, formatMoney } from "../prefs.js";
-import { ring, setRing, confirmSheet, openSheet, formatNumber } from "../ui.js";
+import { prefs, setPref } from "../prefs.js";
+import { ring, setRing, confirmSheet, openSheet, formatNumber, animateCounts } from "../ui.js";
 import { ADDICTIONS, MILESTONES, MAJOR_MILESTONES, benefitTimeline, nextMilestone, soberSeconds, splitDuration, humanDuration } from "../recovery.js";
 import { buildRiskModel, upcomingRisk, hourProfile, riskClock, riskLabel, topWindows, assessNow } from "../insights.js";
 import { openCheckin, openReflection, celebrateMilestone, pendingMilestone, confetti } from "../flows.js";
 import { computeXp, levelFor, dailyQuests, checkinStreak, dayKey } from "../progress.js";
 import { showWarning } from "../companion.js";
+import { calendarEvents } from "../account.js";
+import { mountBoard } from "../widgets.js";
+import { donationDue, donationCard, bindDonation } from "../donate.js";
+import { openRunner } from "../calm.js";
+import { editWhy } from "../sidebar.js";
 
 const DAY = 86400;
-const MOODS = ["😣", "😕", "😐", "🙂", "😄"];
 
 function greeting() {
   const hour = new Date().getHours();
@@ -36,6 +40,9 @@ export function openAchievements(soberDays) {
         <div>${ring({ size: 88, stroke: 9, progress: reached.length / MILESTONES.length, color: "var(--orange)" })}<b>${reached.length}</b></div>
         <p class="sheet-text">Du hast <strong>${reached.length} von ${MILESTONES.length}</strong> Meilensteinen erreicht. Am Anfang gibt es fast jeden Tag einen – weil jeder einzelne Tag zählt.</p>
       </div>
+      ${reached.length ? `<span class="eyebrow">Schon geschafft</span>
+      <div class="milestone-row achievement-done">${reached.slice().reverse().map((milestone) => `
+        <div class="chip-badge is-done ${milestone.major ? "is-major" : ""}"><span>${milestone.icon}</span><strong>${milestone.label}</strong><small>Erreicht</small></div>`).join("")}</div>` : ""}
       <span class="eyebrow">Als Nächstes</span>
       <div class="milestone-row">${upcoming.map((milestone) => `
         <div class="chip-badge ${milestone.major ? "is-major" : ""}"><span>${milestone.icon}</span><strong>${milestone.label}</strong>
@@ -203,61 +210,8 @@ export async function render(root, { api, showToast, refresh, goTo }) {
         ${model.ready ? `<button class="button ${soon ? "button-primary" : "button-secondary"} small ai-home-cta" id="risk-plan" type="button">${soon ? "Jetzt vorsorgen" : "Mein Plan"}</button>` : ""}
       </section>` : ""}
 
-    ${prefs.showMetrics ? `
-      <button class="stat-strip reveal" data-go="stats" type="button" title="Details in der Statistik">
-        <span class="stat-chip"><i style="--tone:var(--green)">€</i><span><strong class="sensitive" data-count="${moneySaved}" data-format="money">0</strong><small>gespart</small></span></span>
-        <span class="stat-chip"><i style="--tone:var(--teal)">◷</i><span><strong><span data-count="${timeSaved}" data-format="dec1">0</span> Std.</strong><small>zurückgewonnen</small></span></span>
-        <span class="stat-chip"><i style="--tone:var(--indigo)">✦</i><span><strong><span data-count="${data.totalFocusMinutes / 60}" data-format="dec1">0</span> Std.</strong><small>Fokus</small></span></span>
-        <span class="stat-chip"><i style="--tone:var(--orange)">↺</i><span><strong data-count="${data.habitsPrevented}">0</strong><small>bewusste Entscheidungen</small></span></span>
-        <span class="stat-more" aria-hidden="true">›</span>
-      </button>` : ""}
-
-    <div class="split-grid">
-      <section class="card checkin-card reveal ${checkin ? "is-done" : ""}">
-        <div class="card-header">
-          <div><span class="eyebrow">Täglicher Check-in ${streak ? `· 🔥 ${streak} ${streak === 1 ? "Tag" : "Tage"} in Folge` : ""}</span>
-            <h3>${checkin ? `Heute: ${MOODS[checkin.mood - 1]} ${checkin.pledge ? "· Versprechen gegeben" : ""}` : "Wie geht es dir heute?"}</h3></div>
-          <button class="button ${checkin ? "button-secondary" : "button-primary"} small" id="open-checkin" type="button">${checkin ? "Bearbeiten" : "Einchecken"}</button>
-        </div>
-        <div class="mood-week">
-          ${week.map((day) => `<span class="mood-day ${day.entry ? "has-entry" : ""}" title="${day.entry ? `Stimmung ${day.entry.mood}/5 · Verlangen ${day.entry.craving}/5` : "Kein Check-in"}"><b>${day.entry ? MOODS[day.entry.mood - 1] : "·"}</b><small>${day.label}</small></span>`).join("")}
-        </div>
-        ${checkin?.gratitude ? `<p class="gratitude">Dankbar für: <em>${escapeHtml(checkin.gratitude)}</em></p>` : `<p class="muted small">20 Sekunden für dich – Stimmung, Verlangen und ein kleines Versprechen.</p>`}
-      </section>
-
-      <section class="card level-card reveal">
-        <div class="level-head">
-          <div class="level-badge">${ring({ size: 74, stroke: 7, progress: level.progress, color: "var(--purple)" })}<b>${level.level}</b></div>
-          <div><span class="eyebrow">Level ${level.level} · ${escapeHtml(level.title)}</span>
-            <h3>${formatNumber(xp.total)} XP</h3>
-            <small class="muted">Noch ${formatNumber(level.toNext)} XP bis Level ${level.level + 1}</small></div>
-        </div>
-        <span class="eyebrow quests-title">Heutige Quests · ${questsDone}/${quests.length}</span>
-        <div class="quests">${quests.map((quest) => `
-          <button type="button" class="quest ${quest.done ? "is-done" : ""}" data-quest="${quest.action}">
-            <span class="quest-check">${quest.done ? "✓" : quest.icon}</span><span>${quest.label}</span></button>`).join("")}</div>
-      </section>
-    </div>
-
-    <div class="highlight-grid">
-      ${benefit && hasStart ? `
-        <section class="card highlight reveal" data-go="stats">
-          <div class="highlight-ring">${ring({ size: 84, stroke: 8, progress: soberDays / benefit.days, color: "var(--green)" })}<span>${Math.ceil(benefit.days - soberDays)}<small>Tage</small></span></div>
-          <div><span class="eyebrow">Dein Körper heilt</span><strong>${escapeHtml(benefit.label)}</strong><p>${escapeHtml(benefit.text)}</p></div>
-        </section>` : ""}
-      <section class="card highlight reveal" data-go="stats">
-        <div class="highlight-icon" style="--tone:var(--teal)">🔭</div>
-        <div><span class="eyebrow">In einem Jahr</span>
-          <strong class="sensitive">${dailyExpense ? formatMoney(yearDays * dailyExpense) : `${formatNumber(yearDays)} Tage frei`}</strong>
-          <p>${dailyExpense ? `gespart · ${formatNumber(yearDays * dailyHours)} Std. Lebenszeit zurück` : "Trag deine früheren Ausgaben ein, um mehr zu sehen."}</p></div>
-      </section>
-      ${prefs.showGoal ? `
-        <section class="card highlight goal-highlight reveal" data-go="stats">
-          <div class="highlight-ring">${ring({ size: 84, stroke: 8, progress: goal.target > 0 ? Math.min(1, moneySaved / goal.target) : 0, color: "var(--orange)" })}<span>${Math.round(goal.target > 0 ? Math.min(100, (moneySaved / goal.target) * 100) : 0)}<small>%</small></span></div>
-          <div><span class="eyebrow">Sparziel</span><strong>${escapeHtml(goal.name)}</strong>
-            <p class="sensitive">${formatMoney(moneySaved)} von ${formatMoney(goal.target)}</p></div>
-        </section>` : ""}
-    </div>
+    ${donationDue() ? donationCard() : ""}
+    <div class="widget-host reveal" id="widget-host"></div>
 
 `;
 
@@ -292,11 +246,23 @@ export async function render(root, { api, showToast, refresh, goTo }) {
       body: `<div class="letter"><small>Geschrieben am ${new Date(readyCapsule.created).toLocaleDateString("de-DE")}</small><p>${escapeHtml(readyCapsule.text)}</p></div>`,
     });
   });
-  root.querySelector("#open-checkin").addEventListener("click", () => openCheckin({ api, showToast, existing: checkin, onSaved: () => refresh() }));
-  root.querySelectorAll("[data-quest]").forEach((button) => button.addEventListener("click", () => {
-    if (button.dataset.quest === "checkin") openCheckin({ api, showToast, existing: checkin, onSaved: () => refresh() });
-    else goTo(button.dataset.quest);
-  }));
+  bindDonation(root, showToast);
+  // the widget board (house layout or the user's own) – it has its own clicks
+  mountBoard(root.querySelector("#widget-host"), {
+    data, analytics, moneySaved, timeSaved, checkin, streak, week, level, xp, quests, questsDone, benefit, hasStart,
+    soberDays, dailyExpense, dailyHours, yearDays, goal, reached, usage, pcLabel, todayKey: dayKey(new Date()),
+  }, {
+    goTo,
+    quest: (action) => (action === "checkin" ? openCheckin({ api, showToast, existing: checkin, onSaved: () => refresh() }) : goTo(action)),
+    act: (action) => {
+      if (action === "checkin") openCheckin({ api, showToast, existing: checkin, onSaved: () => refresh() });
+      else if (action === "achievements") openAchievements(soberDays);
+      else if (action === "game") openRunner();
+      else if (action === "sos") window.dispatchEvent(new Event("reso:sos"));
+      else if (action === "why") editWhy({ showToast });
+    },
+    afterDraw: (host) => animateCounts(host),
+  });
   root.querySelector("#open-achievements").addEventListener("click", () => openAchievements(soberDays));
 
   // All four quests done: celebrate once per day.
@@ -316,6 +282,11 @@ export async function render(root, { api, showToast, refresh, goTo }) {
     try {
       await api("/api/streak/reset", { method: "POST", body: { relapse } });
       setPref("celebratedMilestone", 0);
+      // Milestones belong to the current streak – move already planned calendar entries too.
+      api("/api/account").then(async (status) => {
+        if (!status.calendarEvents?.milestones) return;
+        await api("/api/calendar/events", { method: "POST", body: { kind: "milestones", events: await calendarEvents(api, "milestones") } });
+      }).catch(() => {});
       showToast(message);
       await refresh();
     } catch (error) {
@@ -326,7 +297,7 @@ export async function render(root, { api, showToast, refresh, goTo }) {
   root.querySelector("#reset-streak")?.addEventListener("click", async () => {
     const ok = await confirmSheet({
       title: "Neu beginnen?",
-      text: `Ein Rückfall löscht nicht, was du geschafft hast: <strong>${escapeHtml(humanDuration(seconds))}</strong> frei. Rekord, XP und Abzeichen bleiben.<br><br>Geht es dir gerade schlecht? Unter „Ich brauche Hilfe“ findest du sofort Unterstützung.`,
+      text: `Ein Rückfall löscht nicht, was du geschafft hast: <strong>${escapeHtml(humanDuration(seconds))}</strong> frei – das bleibt als Rekord. Meilensteine und Abzeichen gelten aber nur für die laufende Serie und beginnen neu.<br><br>Geht es dir gerade schlecht? Unter „Ich brauche Hilfe“ findest du sofort Unterstützung.`,
       confirmLabel: "Weiter",
       danger: true,
     });
@@ -440,8 +411,9 @@ export async function render(root, { api, showToast, refresh, goTo }) {
         ["Minuten", parts.minutes, parts.minutes / 60],
         ...(prefs.showSeconds ? [["Sekunden", parts.seconds, parts.seconds / 60]] : []),
       ];
-      unitList.innerHTML = rows.map(([label, value, fraction]) => `
+      const html = rows.map(([label, value, fraction]) => `
         <div class="unit-row">${value > 0 ? `<span class="unit-fill" style="--w:${Math.min(1, fraction) * 100}%"></span>` : ""}<strong>${value}</strong><span>${label}</span></div>`).join("");
+      if (html !== unitList.dataset.html) { unitList.dataset.html = html; unitList.innerHTML = html; } // repaint only on change
     }
   };
   update();

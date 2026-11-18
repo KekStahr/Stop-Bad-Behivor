@@ -1,6 +1,7 @@
 // "Glaube": a calm, personal space for Christians and Muslims – on equal footing.
 // Everything personal is stored encrypted on this device (see gui/faith/state.js).
 import { escapeHtml } from "../api.js";
+import { openFeedback } from "../feedback.js";
 import { confirmSheet, openSheet } from "../ui.js";
 import { RELIGIONS, CHRISTIAN_TRADITIONS, ISLAM_TRADITIONS, PRAYERS, MOMENTS, TRACKER, JOURNAL_KINDS, SCENES, verseOfDay, randomVerse, VERSES } from "../faith/data.js";
 import { faith, loadFaith, saveFaith, activeReligions, prayerConfig, hashPin, todayKey, onFaithChange } from "../faith/state.js";
@@ -139,7 +140,7 @@ function renderSpace(root, context) {
       <header class="page-header faith-header reveal">
         <div>
           <span class="eyebrow">${escapeHtml(subtitle)}</span>
-          <h1>${escapeHtml(all.length > 1 ? "Friede sei mit dir" : RELIGIONS[all[0]].greeting)}</h1>
+          <h1>${escapeHtml(all.length > 1 ? "Friede sei mit dir" : RELIGIONS[all[0]].greeting)} <span class="beta-badge" title="Dieser Bereich ist noch in der Beta-Phase">BETA</span></h1>
           <p class="subtitle">Ein stiller Ort für dich und Gott. 🔐 Verschlüsselt auf diesem Gerät.</p>
         </div>
         <div class="faith-header-actions">
@@ -147,10 +148,16 @@ function renderSpace(root, context) {
           <button class="pill-button subtle" id="faith-settings" type="button">⚙︎ Einstellungen</button>
         </div>
       </header>
+      <aside class="beta-note reveal">
+        <span class="beta-badge">BETA</span>
+        <p><strong>Dieser Bereich ist noch in der Beta-Phase.</strong> Fällt dir ein Fehler auf, schreib mir bitte direkt über Feedback, dann behebe ich ihn so schnell wie möglich. Solange du das Beta-Zeichen siehst, frag bei religiösen Fragen bitte zusätzlich einen Gelehrten, Imam oder Pfarrer.</p>
+        <button class="button button-secondary small" id="beta-feedback" type="button">💌 Feedback</button>
+      </aside>
       <nav class="faith-tabs reveal" role="tablist">${TABS.map(([id, label]) => `<button type="button" role="tab" data-tab="${id}" aria-selected="${tab === id}">${label}</button>`).join("")}</nav>
       <div id="faith-view" class="reveal"></div>
     </div>`;
 
+  root.querySelector("#beta-feedback").addEventListener("click", openFeedback);
   const view = root.querySelector("#faith-view");
   const show = () => {
     cleanupTab?.();

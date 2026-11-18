@@ -108,8 +108,7 @@ export function openAccount({ api, showToast }) {
       ` : `
         <button class="button button-primary button-large google-button" data-action="login" type="button" ${busy || !status.configured ? "disabled" : ""}>
           <span class="google-mark small">G</span> Mit Google anmelden
-        </button>
-        <p class="muted small centered">Es öffnet sich dein Browser. Dort meldest du dich bei Google an und erlaubst Life den Zugriff auf Backup und Kalender.</p>`}`;
+        </button>`}`;
   };
 
   const load = async () => {

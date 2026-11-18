@@ -1,4 +1,4 @@
-import { prefs } from "../prefs.js";
+import { prefs, setPref } from "../prefs.js";
 import { ring, setRing, barChart, chime, notify } from "../ui.js";
 
 const PRESETS = [5, 10, 15, 25, 45, 60, 90, 120];
@@ -71,6 +71,10 @@ export async function render(root, { api, showToast, refresh }) {
             <input id="timer-minutes" type="range" min="1" max="180" step="1" value="${selected}" style="--pct:${(selected / 180) * 100}%">
             <span class="range-labels"><small>1 Min.</small><small>3 Std.</small></span>
           </label>
+          <div class="timer-custom">
+            <label>Fokus<input id="focus-custom" type="number" min="1" max="180" step="1" value="${selected}"><small>Min.</small></label>
+            <label>Pause<input id="break-custom" type="number" min="1" max="120" step="1" value="${prefs.breakMinutes}"><small>Min.</small></label>
+          </div>
           <div class="button-row">
             <button class="button button-primary button-large" id="timer-start" type="button">Fokus starten</button>
             <button class="button button-secondary button-large" id="break-start" type="button">${prefs.breakMinutes} Min. Pause</button>
@@ -106,10 +110,13 @@ export async function render(root, { api, showToast, refresh }) {
 
   if (mode === "idle") {
     const slider = root.querySelector("#timer-minutes");
+    const focusInput = root.querySelector("#focus-custom");
+    const breakInput = root.querySelector("#break-custom");
     const select = (minutes) => {
       selected = minutes;
       slider.value = String(minutes);
       slider.style.setProperty("--pct", `${(minutes / 180) * 100}%`);
+      if (document.activeElement !== focusInput) focusInput.value = String(minutes);
       root.querySelector("#selected-minutes").textContent = `${minutes} Min.`;
       clockNode.textContent = clock(minutes * 60);
       root.querySelectorAll("[data-preset]").forEach((chip) => {
@@ -119,6 +126,16 @@ export async function render(root, { api, showToast, refresh }) {
       });
     };
     slider.addEventListener("input", () => select(Number(slider.value)));
+    focusInput.addEventListener("input", () => {
+      const minutes = Math.round(Number(focusInput.value));
+      if (minutes >= 1 && minutes <= 180) select(minutes);
+    });
+    breakInput.addEventListener("change", () => {
+      const minutes = Math.min(120, Math.max(1, Math.round(Number(breakInput.value)) || 5));
+      breakInput.value = String(minutes);
+      setPref("breakMinutes", minutes);
+      root.querySelector("#break-start").textContent = `${minutes} Min. Pause`;
+    });
     root.querySelectorAll("[data-preset]").forEach((chip) => chip.addEventListener("click", () => select(Number(chip.dataset.preset))));
     root.querySelector("#timer-start").addEventListener("click", async (event) => {
       event.currentTarget.disabled = true;

@@ -1,17 +1,21 @@
 {
   "name": "reso-desktop",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
-  "description": "Life – made by Reşo. Begleiter auf dem Weg aus der Sucht.",
+  "description": "Life",
   "main": "electron/main.cjs",
   "scripts": {
     "start": "electron .",
-    "check": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/core.cjs && node --check electron/store.cjs && node --check electron/google.cjs && node --check electron/monitor.cjs && node --check gui/app.js && node --check gui/api.js && node --check gui/pages/home.js && node --check gui/pages/timer.js && node --check gui/pages/stats.js && node --check gui/pages/settings.js && node --check gui/pages/community.js && node --check gui/prefs.js && node --check gui/ui.js && node --check gui/sos.js && node --check gui/recovery.js && node --check gui/insights.js && node --check gui/flows.js && node --check gui/palette.js && node --check gui/account.js && node --check gui/companion.js && node --check gui/progress.js && node --check gui/sidebar.js && node --check gui/wave.js && node --check gui/calm.js && node --check gui/help.js && node --check gui/pause.js && node --check gui/intervention.js && node --check gui/pages/crisis.js && node --check gui/pages/faith.js && node --check gui/faith/calc.js && node --check gui/faith/data.js && node --check gui/faith/state.js && node --check gui/faith/ui.js && node --check gui/faith/reader.js && node --check gui/faith/reminders.js && node --check gui/faith/content.js && node --check gui/faith/wege.js && node --check gui/faith/learn.js && node --check gui/faith/salah-text.js && node --check gui/faith/salah-timing.js && node --check tools/align-clips.cjs && node --check electron/seal.cjs && node --check electron/matcher.cjs",
+    "check": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/core.cjs && node --check electron/store.cjs && node --check electron/google.cjs && node --check electron/monitor.cjs && node --check gui/app.js && node --check gui/api.js && node --check gui/pages/home.js && node --check gui/pages/timer.js && node --check gui/pages/stats.js && node --check gui/pages/settings.js && node --check gui/pages/community.js && node --check gui/prefs.js && node --check gui/ui.js && node --check gui/sos.js && node --check gui/recovery.js && node --check gui/insights.js && node --check gui/flows.js && node --check gui/palette.js && node --check gui/account.js && node --check gui/companion.js && node --check gui/progress.js && node --check gui/sidebar.js && node --check gui/wave.js && node --check gui/calm.js && node --check gui/help.js && node --check gui/pause.js && node --check gui/intervention.js && node --check gui/pages/crisis.js && node --check gui/pages/faith.js && node --check gui/faith/calc.js && node --check gui/faith/data.js && node --check gui/faith/state.js && node --check gui/faith/ui.js && node --check gui/faith/reader.js && node --check gui/faith/reminders.js && node --check gui/faith/content.js && node --check gui/faith/wege.js && node --check gui/faith/learn.js && node --check gui/faith/salah-text.js && node --check gui/faith/salah-timing.js && node --check tools/align-clips.cjs && node --check electron/seal.cjs && node --check electron/matcher.cjs && node --check gui/widgets.js && node --check gui/i18n.js && node --check gui/feedback.js && node --check gui/feedback-page.js && node --check gui/donate.js",
     "test": "node --test tests/core.test.mjs && node tests/test_insights.mjs && node tests/test_faith.mjs && node tests/test_triggers.mjs",
-    "build": "electron-builder"
+    "build": "electron-builder",
+    "release": "electron-builder --win nsis --publish always"
   },
   "devDependencies": {
+    "@capacitor/android": "^7.4.4",
+    "@capacitor/cli": "^7.4.4",
+    "@capacitor/core": "^7.4.4",
     "electron": "^45.3.0",
     "electron-builder": "26.18.0"
   },
@@ -26,17 +30,29 @@
   "build": {
     "appId": "de.reso.desktop",
     "productName": "Life",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "KekStahr",
+        "repo": "Stop-Bad-Behivor"
+      }
+    ],
+    "npmRebuild": false,
     "files": [
       "electron/**/*",
       "gui/**/*",
+      "!gui/i18n/*.part*.json",
+      "!gui/assets/audio/salah-guide.mp3",
       "package.json"
     ],
     "win": {
       "target": "nsis",
-      "icon": "electron/assets/icon.ico"
+      "icon": "electron/assets/icon.ico",
+      "executableName": "Life"
     },
     "nsis": {
       "oneClick": false,
+      "artifactName": "Life-Setup-${version}.${ext}",
       "allowToChangeInstallationDirectory": true,
       "installerIcon": "electron/assets/icon.ico",
       "uninstallerIcon": "electron/assets/icon.ico",
@@ -52,6 +68,7 @@
     "electron-winstaller@5.4.0": true
   },
   "dependencies": {
+    "electron-updater": "^6.6.2",
     "uiohook-napi": "^1.5.5"
   }
 }

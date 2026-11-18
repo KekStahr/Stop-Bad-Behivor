@@ -1,0 +1,8 @@
+{
+  "appId": "de.reso.life",
+  "appName": "Life",
+  "webDir": "mobile/www",
+  "android": { "path": "mobile/android" },
+  "server": { "androidScheme": "https" },
+  "plugins": { "CapacitorHttp": { "enabled": true } }
+}

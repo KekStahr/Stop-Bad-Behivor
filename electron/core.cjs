@@ -559,10 +559,16 @@ function createCore({ store, host = {}, fetchImpl = globalThis.fetch, now = () =
       if (uploadIfMissing) return uploadBackup();
       throw new Error("Für dieses Konto wurde kein Backup gefunden.");
     }
-    if (!result.ok || typeof result.payload.stats_data !== "object") throw new Error("Das Cloud-Backup konnte nicht geladen werden.");
-    for (const [key, value] of Object.entries(result.payload.stats_data)) {
-      if (!PRIVATE_BACKUP_KEYS.has(key)) data()[key] = value;
+    const restored = result.payload?.stats_data;
+    if (!result.ok || !restored || typeof restored !== "object" || Array.isArray(restored)) throw new Error("Das Cloud-Backup konnte nicht geladen werden.");
+    const current = data();
+    for (const [key, value] of Object.entries(restored)) {
+      // only plain data keys, never prototype keys or ones whose type would change (a tampered backup must not break the app)
+      if (PRIVATE_BACKUP_KEYS.has(key) || !/^[a-z][a-z0-9_]{0,63}$/.test(key)) continue;
+      if (key in current && current[key] !== null && value !== null && (typeof current[key] !== typeof value || Array.isArray(current[key]) !== Array.isArray(value))) continue;
+      current[key] = value;
     }
+    if (Array.isArray(current.trigger_words)) current.trigger_words = current.trigger_words.filter((word) => typeof word === "string" && word.length >= 2 && word.length <= 40).slice(0, 2000);
     Object.assign(data(), { cloud_backup_initialized: true, cloud_backup_dirty: false });
     store.save();
     host.monitorChanged?.();
@@ -689,7 +695,7 @@ function createCore({ store, host = {}, fetchImpl = globalThis.fetch, now = () =
   // Scripture texts and place search, fetched here so the page itself never talks to other hosts.
   const SCRIPTURE = {
     quran: { base: "https://api.alquran.cloud", path: /^\/v1\/(surah|ayah)\/\d{1,3}(:\d{1,3})?(\/editions)?\/[a-z0-9.,-]{2,200}$/ },
-    qurancom: { base: "https://api.quran.com", path: /^\/api\/v4\/(chapter_recitations\/\d{1,2}\/\d{1,3}\?segments=true|verses\/by_chapter\/\d{1,3}\?words=true&word_fields=text_uthmani&per_page=50)$/ },
+    qurancom: { base: "https://api.quran.com", path: /^\/api\/v4\/(chapter_recitations\/\d{1,2}\/\d{1,3}\?segments=true|verses\/by_chapter\/\d{1,3}\?words=true&word_fields=text_uthmani&per_page=50(&page=[1-6])?)$/ },
     bible: { base: "https://api.getbible.net", path: /^\/v2\/[a-z0-9]{2,30}\/\d{1,2}\/\d{1,3}\.json$/ },
   };
   const scriptureCache = new Map();
@@ -832,6 +838,23 @@ function createCore({ store, host = {}, fetchImpl = globalThis.fetch, now = () =
     if (method === "POST" && path === "/api/app/show") {
       host.showWindow?.();
       return { shown: true };
+    }
+    if (method === "POST" && path === "/api/feedback") {
+      const area = String(body?.area || "");
+      const text = String(body?.text || "").trim();
+      if (text.length < 5 || text.length > 2000 || !isPrintable(text, "\n\t")) throw new UserError("Bitte schreib 5 bis 2000 Zeichen.");
+      const result = await request(`${SERVER}/feedback`, { method: "POST", body: { area, text, version: host.version || "", language: String(data().web_ui_prefs?.language || "").slice(0, 8) }, timeout: 10000 })
+        .catch(() => ({ ok: false, payload: { detail: "Keine Verbindung. Bitte versuch es später noch einmal." } }));
+      if (!result.ok) throw new UserError(result.payload?.detail || "Feedback konnte nicht gesendet werden.");
+      return { sent: true };
+    }
+    if (method === "POST" && path === "/api/app/feedback-window") {
+      if (!host.openFeedback?.()) throw new UserError("Kein eigenes Fenster möglich.");
+      return {};
+    }
+    if (method === "POST" && path === "/api/app/install-update") {
+      if (!host.installUpdate?.()) throw new UserError("Es ist gerade kein Update bereit.");
+      return {};
     }
     if (method === "POST" && path === "/api/app/open-external") {
       let url;

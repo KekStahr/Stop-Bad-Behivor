@@ -31,6 +31,7 @@ export const FAITH_DEFAULTS = {
   homeCard: true,
   versesInQuotes: "mixed", // off | mixed | only
   showArabic: true,
+  showLatin: false,
   quranEdition: "de.bubenheim",
   reciter: "ar.alafasy",
   bibleTranslation: "elberfelder1905",
@@ -57,8 +58,7 @@ export const FAITH_DEFAULTS = {
   tahajjudReminder: false,
   planProgress: {}, // { planId: [dayIndex, …] }
   freedomDone: [], // day indexes of "21 Tage in die Freiheit"
-  steps: {}, // { stepIndex: { done, note } }
-  deeds: [], // { id, text, at }
+  deeds: [], // { id, text, religion, at }
   namesLearned: [], // indexes into ASMA / GOD_NAMES, prefixed "i" / "c"
   memorized: [], // verse refs
   learnedSteps: [], // prayer parts marked as "known by heart" in Gebet lernen
@@ -77,6 +77,9 @@ export async function loadFaith() {
   loading ||= api("/api/faith").then(({ state: stored }) => {
     state = { ...FAITH_DEFAULTS, ...(stored || {}) };
     state.adjust = { ...FAITH_DEFAULTS.adjust, ...(state.adjust || {}) };
+    // older good deeds had no religion – with only one religion active they clearly belong to it
+    const only = state.christian !== state.islam ? (state.islam ? "islam" : "christian") : null;
+    if (only) state.deeds = state.deeds.map((deed) => (deed.religion ? deed : { ...deed, religion: only }));
     return state;
   }).catch((error) => {
     loading = null;

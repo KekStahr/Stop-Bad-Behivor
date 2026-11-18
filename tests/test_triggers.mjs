@@ -57,3 +57,18 @@ for (const bait of BAIT) assert.ok(typed(`ich will ${bait}`).length > 0, `not ca
 assert.deepEqual(typed("dominant"), []);
 assert.deepEqual(typed("kokskohle"), []);
 console.log(`ok – ${all.length} words, ${BAIT.length} disguised triggers caught, no false alarms`);
+
+// the user's own words are found anywhere, even short ones ("stri" → stripchat), unless "=" asks for whole words
+const own = (words, text) => {
+  const found = [];
+  const monitor = createMonitor({ onTrigger: (word) => found.push(word), onStress: () => {} });
+  monitor.configure({ triggerWords: [...all, ...words], ownWords: words });
+  for (const character of text) monitor.handleChar(character);
+  monitor.handleChar(" ");
+  return found;
+};
+assert.deepEqual(own(["stri"], "stripchat.com"), ["stri"]);
+assert.deepEqual(own(["wolt"], "woltshop"), ["wolt"]);
+assert.deepEqual(own(["=wolt"], "woltshop"), []);
+assert.deepEqual(own(["=wolt"], "wolt bestellen"), ["wolt"]);
+console.log("ok – own words match inside other words");

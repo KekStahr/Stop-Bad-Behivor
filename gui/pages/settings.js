@@ -3,6 +3,9 @@ import { prefs, setPref, resetPrefs, onPrefChange, ACCENTS } from "../prefs.js";
 import { confirmSheet, chime, openSheet } from "../ui.js";
 import { ADDICTIONS, BREATH_PATTERNS, QUOTE_INTERVALS, TRIGGER_CATALOG, ALL_CATALOG_WORDS } from "../recovery.js";
 import { openAccount } from "../account.js";
+import { LANGUAGES } from "../i18n.js";
+import { requestWidgetEdit } from "../widgets.js";
+import { openFeedback } from "../feedback.js";
 import { openCheckin, openOnboarding, saveTriggerCategories, enabledCategories } from "../flows.js";
 import { faith, loadFaith, saveFaith, deleteFaith, hashPin } from "../faith/state.js";
 import { CHRISTIAN_TRADITIONS, ISLAM_TRADITIONS, QURAN_EDITIONS, BIBLE_TRANSLATIONS, RECITERS, SCENES } from "../faith/data.js";
@@ -66,6 +69,7 @@ const SECTIONS = [
   },
   {
     id: "appearance", title: "Darstellung", icon: "◐", tone: "var(--indigo)", rows: [
+      { key: "language", type: "select", label: "Sprache", hint: "Die App-Sprache. Gebetstexte, Verse und Trigger-Wörter bleiben im Original.", options: LANGUAGES },
       { key: "theme", type: "segmented", label: "Erscheinungsbild", options: [["auto", "Automatisch"], ["light", "Hell"], ["dark", "Dunkel"]] },
       { key: "accent", type: "color", label: "Akzentfarbe" },
       { key: "fontScale", type: "range", label: "Textgröße", min: 0.85, max: 1.3, step: 0.05, format: (value) => `${Math.round(value * 100)} %` },
@@ -84,8 +88,7 @@ const SECTIONS = [
       { key: "counterStyle", type: "segmented", label: "Zähler-Stil", options: [["rings", "Ringe"], ["list", "Balken"]] },
       { key: "showSeconds", type: "toggle", label: "Sekunden anzeigen" },
       { key: "showWhy", type: "toggle", label: "„Mein Warum“ in der Seitenleiste" },
-      { key: "showMetrics", type: "toggle", label: "Kennzahlen anzeigen" },
-      { key: "showGoal", type: "toggle", label: "Sparziel anzeigen" },
+      { key: "homeWidgets", type: "action", label: "Widgets der Übersicht", hint: "Auf der Übersicht unter „Widgets anpassen“: Widgets hinzufügen, entfernen, verschieben und in der Größe ändern.", button: "Anpassen" },
       { key: "showQuote", type: "toggle", label: "Zitat in der Seitenleiste" },
       { key: "quoteInterval", type: "select", label: "Neues Zitat", hint: "Wie oft das Zitat unter „Mein Warum“ wechselt.", options: QUOTE_INTERVALS },
       { key: "privacyMode", type: "toggle", label: "Privatsphäre-Modus", hint: "Geldbeträge werden unscharf, bis du mit der Maus darüber fährst." },
@@ -125,14 +128,14 @@ const SECTIONS = [
   {
     id: "protection", title: "Schutz & Erkennung", icon: "🛡️", tone: "var(--red)", rows: [
       { key: "catalog", type: "catalog", label: "Schutz-Kategorien", hint: "Aktiviere Kategorien – Life erkennt die Begriffe beim Tippen und hilft dir genau in dem Moment." },
-      { key: "triggerCustom", store: "backend", type: "textarea", label: "Eigene Begriffe", hint: "Zusätzlich zu den Kategorien, kommagetrennt. Bitte eindeutige Begriffe wählen – kurze Wörter lösen sonst auch in normalen Sätzen aus.", max: 4000 },
+      { key: "triggerCustom", store: "backend", type: "textarea", label: "Eigene Begriffe", hint: "Zusätzlich zu den Kategorien, durch Komma oder Zeilen getrennt. Eigene Begriffe werden überall erkannt – auch als Teil eines Wortes („stri“ fängt „stripchat“). Mit „=“ davor nur als ganzes Wort (=meth).", max: 4000 },
       { key: "stressDetection", store: "backend", type: "toggle", label: "Tipp-Tempo-Erkennung", hint: "Bei sehr hektischem Tippen öffnet sich „Kurz innehalten“." },
       { key: "keyboardLayout", type: "select", label: "Tastatur", hint: "Damit Begriffe mit Umlauten und Y/Z richtig erkannt werden.", options: [["de", "Deutsch (QWERTZ)"], ["us", "Englisch (QWERTY)"]] },
       { key: "closeBrowsers", type: "toggle", label: "Alle Browser bei Auslöser schließen", hint: "Schließt Chrome, Edge, Firefox, Opera, Brave, Vivaldi und Discord sofort. Offene Tabs und ungespeicherte Eingaben gehen dabei verloren." },
     ],
   },
   {
-    id: "faith", title: "Glaube – Allgemein", icon: "🕊️", tone: "#c9a24a", rows: [
+    id: "faith", title: "Religion", icon: "🕊️", tone: "#c9a24a", rows: [
       { key: "enabled", store: "faith", type: "toggle", label: "Bereich Glaube aktivieren", hint: "Gebet, Bibel und Koran, Gebetszeiten, Kalender und Tagebuch. Alles wird verschlüsselt nur auf diesem Gerät gespeichert." },
       { key: "order", store: "faith", type: "select", label: "Reihenfolge, wenn beide aktiv sind", hint: "„Abwechselnd“ wechselt täglich, welche zuerst erscheint – so steht keine Seite immer hinten.", options: [["alternate", "Abwechselnd"], ["christian", "Christentum zuerst"], ["islam", "Islam zuerst"]] },
       { key: "tracker", store: "faith", type: "toggle", label: "Gebets-Tracker anzeigen", hint: "Abhaken, ob du deine Gebete gemacht hast. Ausgeschaltet wird er nirgends angezeigt." },
@@ -151,7 +154,7 @@ const SECTIONS = [
     ],
   },
   {
-    id: "faith-christian", title: "Glaube · Christentum", icon: "✝", tone: "#c9a24a", rows: [
+    id: "faith-christian", title: "Christentum", icon: "✝", tone: "#c9a24a", rows: [
       { key: "christian", store: "faith", type: "toggle", label: "Christentum aktivieren", hint: "Bibel, Gebete, Kirchenjahr, Gebetsschnur und christlicher Raum." },
       { key: "christianTradition", store: "faith", type: "select", label: "Konfession", hint: "Bestimmt Feiertage, Gebete und Kirchenjahr.", options: CHRISTIAN_TRADITIONS },
       { key: "bibleTranslation", store: "faith", type: "select", label: "Bibelübersetzung", options: BIBLE_TRANSLATIONS },
@@ -164,7 +167,7 @@ const SECTIONS = [
     ],
   },
   {
-    id: "faith-islam", title: "Glaube · Islam", icon: "☪", tone: "#c9a24a", rows: [
+    id: "faith-islam", title: "Islam", icon: "☪", tone: "#c9a24a", rows: [
       { key: "islam", store: "faith", type: "toggle", label: "Islam aktivieren", hint: "Koran, Gebetszeiten, Hidschri-Kalender, Tasbīḥ und muslimischer Raum." },
       { key: "islamTradition", store: "faith", type: "select", label: "Rechtsschule", hint: "Bestimmt Asr-Zeit, Feiertage und Gebete.", options: ISLAM_TRADITIONS },
       { key: "faithPlace", type: "action", label: "Standort für Gebetszeiten", hint: "Stadt suchen oder Koordinaten selbst eingeben.", button: "Festlegen" },
@@ -183,7 +186,7 @@ const SECTIONS = [
     ],
   },
   {
-    id: "emergency", title: "Notfall & Hilfe", icon: "🛟", tone: "var(--red)", rows: [
+    id: "emergency", title: "Notfall & Hilfe", icon: "🆘", tone: "var(--red)", rows: [
       { key: "sosButton", type: "toggle", label: "Hilfe-Button in der Seitenleiste", hint: "Empfohlen: immer eingeschaltet lassen." },
       { key: "helpRegion", type: "select", label: "Land für Hilfe-Nummern", options: [["de", "Deutschland"], ["at", "Österreich"], ["ch", "Schweiz"]] },
       { key: "breathPattern", type: "select", label: "Atemübung", options: Object.entries(BREATH_PATTERNS).map(([id, item]) => [id, item.label]) },
@@ -191,6 +194,11 @@ const SECTIONS = [
       { key: "contactPhone", type: "text", label: "Telefonnummer", max: 40, hint: "Bleibt nur auf diesem Gerät und wird nie synchronisiert." },
       { key: "ifThenPlan", type: "textarea", label: "Mein Wenn-Dann-Plan", hint: "Eine Zeile pro Plan. Erscheint im Hilfe-Fenster und bei Frühwarnungen.", max: 600 },
       { key: "openSos", type: "action", label: "Notfall-Fenster", button: "Öffnen" },
+    ],
+  },
+  {
+    id: "feedback", title: "Feedback an Reşo", icon: "💌", tone: "var(--pink)", rows: [
+      { key: "feedback", type: "action", label: "Fehler gefunden oder eine Idee?", hint: "Wähle den Bereich und schreib mir direkt. Ich lese jede Nachricht und verbessere Life damit.", button: "Feedback schreiben" },
     ],
   },
   {
@@ -203,6 +211,19 @@ const SECTIONS = [
     ],
   },
 ];
+
+// Sections in groups – faith has one "Religion" heading with Christianity and Islam inside.
+const GROUPS = [
+  ["Allgemein", ["account", "profile", "appearance", "home"]],
+  ["Dein Weg", ["checkin", "finance", "focus"]],
+  ["Schutz & Hilfe", ["protection", "ai", "emergency", "helper"]],
+  ["Gemeinschaft", ["community"]],
+  ["Religion", ["faith", "faith-christian", "faith-islam"]],
+  ["System", ["feedback", "data"]],
+];
+const GROUP_OF = new Map(GROUPS.flatMap(([name, ids], g) => ids.map((id, i) => [id, { name, order: g * 100 + i }])));
+SECTIONS.sort((a, b) => (GROUP_OF.get(a.id)?.order ?? 999) - (GROUP_OF.get(b.id)?.order ?? 999));
+const CHILD_SECTIONS = new Set(["faith-christian", "faith-islam"]);
 
 function backendValues(data) {
   return {
@@ -304,8 +325,9 @@ export async function render(root, { api, showToast }) {
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
           <input id="settings-search" type="search" placeholder="Einstellungen suchen">
         </label>
-        ${SECTIONS.map((section) => `
-          <button type="button" class="settings-nav-item" data-jump="${section.id}">
+        ${SECTIONS.map((section, index) => `
+          ${GROUP_OF.get(section.id)?.name !== GROUP_OF.get(SECTIONS[index - 1]?.id)?.name && GROUP_OF.get(section.id)?.name !== section.title ? `<span class="settings-nav-group">${escapeHtml(GROUP_OF.get(section.id)?.name || "")}</span>` : ""}
+          <button type="button" class="settings-nav-item ${CHILD_SECTIONS.has(section.id) ? "is-child" : ""}" data-jump="${section.id}">
             <span class="settings-icon" style="--tone:${section.tone}">${section.icon}</span>${escapeHtml(section.title)}
           </button>`).join("")}
       </nav>
@@ -374,7 +396,7 @@ export async function render(root, { api, showToast }) {
       case "goalAmount":
         return { savingsGoal: { name: String(backend.goalName).trim(), amount: Number(backend.goalAmount) } };
       case "triggerCustom": {
-        const custom = String(backend.triggerCustom).split(",").map((word) => word.trim().toLowerCase()).filter(Boolean);
+        const custom = String(backend.triggerCustom).split(/[,;\n]+/).map((word) => word.trim().toLowerCase()).filter(Boolean);
         const catalog = backend.triggerWords.filter((word) => ALL_CATALOG_WORDS.has(word));
         backend.triggerWords = [...new Set([...custom, ...catalog])];
         return backend.triggerWords.length ? { triggerWords: backend.triggerWords } : null;
@@ -498,6 +520,8 @@ export async function render(root, { api, showToast }) {
     if (action === "checkinNow") openCheckin({ api, showToast });
     if (action === "aiPatterns") window.dispatchEvent(new CustomEvent("reso:navigate", { detail: "stats" }));
     if (action === "testSound") chime();
+    if (action === "feedback") openFeedback();
+    if (action === "homeWidgets") { requestWidgetEdit(); window.dispatchEvent(new CustomEvent("reso:navigate", { detail: "home" })); }
     if (action === "openSos") window.dispatchEvent(new Event("reso:sos"));
     if (action === "faithPlace") openLocationSheet({ showToast });
     if (action === "faithAdjust") openAdjustSheet({ showToast });

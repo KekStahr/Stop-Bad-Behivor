@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, powerMonitor, protocol, safeStorage, shell } = require("electron");
+const { app, BrowserWindow, Menu, Notification, Tray, globalShortcut, ipcMain, nativeImage, powerMonitor, protocol, safeStorage, shell } = require("electron");
 const { execFile } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -16,6 +16,8 @@ let mainWindow = null;
 let pauseWindow = null;
 let tray = null;
 let allowQuit = false;
+const APP_ICON = path.join(__dirname, "assets", "icon.ico"); // taskbar and Alt+Tab show Life, not the Electron atom
+let updateReady = ""; // version of a downloaded update, installed on the next restart
 let quitTimer = null;
 let store;
 let core;
@@ -46,7 +48,7 @@ const energySaver = energySaverEnabled();
 if (energySaver) app.disableHardwareAcceleration();
 
 protocol.registerSchemesAsPrivileged([
-  { scheme: "reso", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
+  { scheme: "reso", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
 ]);
 
 // Only one Life at a time: a second start just brings the running one to the front.
@@ -62,7 +64,7 @@ if (!app.requestSingleInstanceLock()) {
 
 function registerAppProtocol() {
   const guiDirectory = path.resolve(__dirname, "..", "gui");
-  const contentTypes = new Map([[".html", "text/html; charset=utf-8"], [".js", "text/javascript; charset=utf-8"], [".css", "text/css; charset=utf-8"], [".png", "image/png"], [".svg", "image/svg+xml"]]);
+  const contentTypes = new Map([[".html", "text/html; charset=utf-8"], [".js", "text/javascript; charset=utf-8"], [".css", "text/css; charset=utf-8"], [".png", "image/png"], [".svg", "image/svg+xml"], [".mp3", "audio/mpeg"], [".mp4", "audio/mp4"], [".json", "application/json; charset=utf-8"]]);
   protocol.handle("reso", async (request) => {
     const url = new URL(request.url);
     if (url.hostname !== "app") return new Response("Not found", { status: 404 });
@@ -75,9 +77,17 @@ function registerAppProtocol() {
     const filePath = path.resolve(guiDirectory, pathname === "/" ? "index.html" : pathname.slice(1));
     if (!filePath.toLowerCase().startsWith(`${guiDirectory}${path.sep}`.toLowerCase())) return new Response("Not found", { status: 404 });
     try {
-      return new Response(await fs.promises.readFile(filePath), {
-        headers: { "Content-Type": contentTypes.get(path.extname(filePath)) || "application/octet-stream", "X-Content-Type-Options": "nosniff", "Cache-Control": "no-store" },
-      });
+      const body = await fs.promises.readFile(filePath);
+      const headers = { "Content-Type": contentTypes.get(path.extname(filePath)) || "application/octet-stream", "X-Content-Type-Options": "nosniff", "Cache-Control": "no-store", "Accept-Ranges": "bytes" };
+      // byte ranges let the audio player jump straight to a part of the prayer recording
+      const range = /^bytes=(\d*)-(\d*)$/.exec(request.headers.get("range") || "");
+      if (range && (range[1] || range[2])) {
+        const start = range[1] ? Number(range[1]) : Math.max(0, body.length - Number(range[2]));
+        const end = range[1] && range[2] ? Math.min(Number(range[2]), body.length - 1) : body.length - 1;
+        if (start > end || start >= body.length) return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${body.length}` } });
+        return new Response(body.subarray(start, end + 1), { status: 206, headers: { ...headers, "Content-Range": `bytes ${start}-${end}/${body.length}`, "Content-Length": String(end - start + 1) } });
+      }
+      return new Response(body, { headers: { ...headers, "Content-Length": String(body.length) } });
     } catch (error) {
       if (error.code === "ENOENT" || error.code === "EISDIR") return new Response("Not found", { status: 404 });
       throw error;
@@ -147,24 +157,82 @@ function appState() {
 
 // ---- tray --------------------------------------------------------------------------
 const clock = (ms) => `${String(Math.floor(ms / 60000)).padStart(2, "0")}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, "0")}`;
+// tray texts in the app language (same dictionaries as the window)
+let trayDict = { lang: null, map: {} };
+function t(text) {
+  const lang = prefs().language || (prefs().onboarded ? "de" : "en");
+  if (trayDict.lang !== lang) {
+    trayDict = { lang, map: {} };
+    try { trayDict.map = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "gui", "i18n", `${lang}.json`), "utf8")); } catch { /* German stays */ }
+  }
+  return trayDict.map[text] || text;
+}
+// ---- automatic updates: GitHub releases of KekStahr/Stop-Bad-Behivor ------------------
+// The installed app looks for a newer release, downloads it quietly and installs it when Life
+// restarts. Users never download a file themselves.
+function startUpdates() {
+  if (!app.isPackaged) return; // running from source: nothing to update
+  const { autoUpdater } = require("electron-updater");
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.on("update-downloaded", (info) => {
+    updateReady = info.version;
+    trayLabel = "";
+    updateTray();
+    emit("update-ready", { version: info.version });
+  });
+  autoUpdater.on("error", (error) => console.warn("Update check failed:", error.message));
+  const check = () => autoUpdater.checkForUpdates().catch(() => {}); // offline is fine – next time
+  setTimeout(check, 20000);
+  setInterval(check, 4 * 3600000);
+}
+// Feedback opens in its own small window, so people can keep the app in view while writing.
+let feedbackWindow = null;
+function openFeedback() {
+  if (feedbackWindow) { feedbackWindow.focus(); return true; }
+  feedbackWindow = new BrowserWindow({
+    icon: APP_ICON,
+    width: 520,
+    height: 660,
+    minWidth: 420,
+    autoHideMenuBar: true,
+    backgroundColor: "#111113",
+    title: "Life · Feedback",
+    webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  feedbackWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  feedbackWindow.webContents.on("will-navigate", (event, url) => { if (!url.startsWith("reso://app/")) event.preventDefault(); });
+  feedbackWindow.on("closed", () => { feedbackWindow = null; });
+  feedbackWindow.loadURL("reso://app/feedback.html");
+  return true;
+}
+function installUpdate() {
+  if (!updateReady) return false;
+  allowQuit = true; // a restart for an update is not "quitting" – Life is back a few seconds later
+  require("electron-updater").autoUpdater.quitAndInstall(true, true);
+  return true;
+}
+
 function trayMenu() {
   const deadline = quitDeadline();
   return Menu.buildFromTemplate([
-    { label: "Life öffnen", click: () => showWindow() },
-    { label: "Ich brauche Hilfe", click: () => { showWindow(); emit("sos"); } },
-    { label: "Fokus-Session", click: () => { showWindow(); emit("navigate", { page: "timer" }); } },
+    { label: t("Life öffnen"), click: () => showWindow() },
+    { label: t("Ich brauche Hilfe"), click: () => { showWindow(); emit("sos"); } },
+    { label: t("Kurz ablenken (Spiel)"), click: () => { showWindow(); emit("game"); } },
+    { label: t("Fokus-Session"), click: () => { showWindow(); emit("navigate", { page: "timer" }); } },
+    ...(updateReady ? [{ label: `${t("Update installieren und neu starten")} (${updateReady})`, click: installUpdate }] : []),
     { type: "separator" },
     deadline
-      ? { label: `Beendet sich in ${clock(deadline - Date.now())}`, enabled: false }
-      : { label: "Beenden … (30 Min. Wartezeit)", click: () => { quitAction("start"); showWindow(); } },
-    ...(deadline ? [{ label: "Beenden abbrechen – ich bleibe", click: () => quitAction("cancel") }] : []),
+      ? { label: t("Beendet sich in #").replace("#", clock(deadline - Date.now())), enabled: false }
+      : { label: t("Beenden … (# Min. Wartezeit)").replace("#", "30"), click: () => { quitAction("start"); showWindow(); } },
+    ...(deadline ? [{ label: t("Beenden abbrechen – ich bleibe"), click: () => quitAction("cancel") }] : []),
   ]);
 }
 let trayLabel = "";
 function updateTray() {
   if (!tray) return;
   const deadline = quitDeadline();
-  const label = deadline ? `Life – beendet sich in ${clock(deadline - Date.now())}` : "Life – ich bin für dich da";
+  const label = deadline ? t("Life – beendet sich in #").replace("#", clock(deadline - Date.now())) : "Life";
   if (label === trayLabel) return;
   trayLabel = label;
   tray.setToolTip(label);
@@ -188,6 +256,7 @@ function showWindow() {
 
 function createWindow() {
   mainWindow = new BrowserWindow({
+    icon: APP_ICON,
     width: 1440,
     height: 960,
     minWidth: 960,
@@ -236,6 +305,7 @@ function openPauseWindow() {
     return;
   }
   pauseWindow = new BrowserWindow({
+    icon: APP_ICON,
     width: 400,
     height: 620,
     resizable: false,
@@ -245,7 +315,6 @@ function openPauseWindow() {
     autoHideMenuBar: true,
     backgroundColor: "#111113",
     title: "Life · Kurz innehalten",
-    icon: path.join(__dirname, "assets", "icon.png"),
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   pauseWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
@@ -289,9 +358,12 @@ function usageState() {
 }
 
 // ---- keyboard monitor ---------------------------------------------------------------
+let catalogWords = null; // words of the built-in catalog; everything else was typed in by the user
 function configureMonitor() {
+  const words = store.data.trigger_words || [];
   monitor.configure({
-    triggerWords: store.data.trigger_words || [],
+    triggerWords: words,
+    ownWords: catalogWords ? words.filter((word) => !catalogWords.has(word)) : [],
     stressDetection: Boolean(store.data.stress_detection_enabled),
     layout: prefs().keyboardLayout === "us" ? "us" : "de",
   });
@@ -325,12 +397,15 @@ async function start() {
       setAutostart,
       appState,
       quitAction,
+      installUpdate,
+      openFeedback,
+      version: app.getVersion(),
       showWindow,
       openExternal: (url) => shell.openExternal(url),
       monitorAvailable: () => monitor.available(),
       monitorChanged: configureMonitor,
       usage: usageState,
-      prefsChanged: configureMonitor,
+      prefsChanged: () => { configureMonitor(); trayLabel = ""; updateTray(); }, // e.g. a new language
       seal: sealer.seal,
       unseal: sealer.unseal,
     },
@@ -351,10 +426,18 @@ async function start() {
   createTray();
   createWindow();
   configureMonitor();
+  // Strg+Alt+H opens help from anywhere – in a craving moment nobody should have to search for the window
+  if (!globalShortcut.register("CommandOrControl+Alt+H", () => { showWindow(); emit("sos"); })) console.warn("Strg+Alt+H is already taken by another program");
+  app.on("will-quit", () => globalShortcut.unregisterAll());
+  // the catalog lives in the GUI code; knowing it lets the user's own words match inside other words
+  import(require("node:url").pathToFileURL(path.resolve(__dirname, "..", "gui", "recovery.js")).href)
+    .then(({ ALL_CATALOG_WORDS }) => { catalogWords = ALL_CATALOG_WORDS; configureMonitor(); })
+    .catch((error) => console.error("Trigger catalog not loaded:", error.message));
   monitor.start();
   scheduleQuit();
   core.scheduleCloud();
   trackUsage();
+  startUpdates();
   setInterval(trackUsage, 60000);
 }
 

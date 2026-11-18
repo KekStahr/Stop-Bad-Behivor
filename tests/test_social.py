@@ -230,7 +230,59 @@ def test_schedule():
     assert not social._available_by_schedule(profile, monday_23 - 6 * 3600)  # 17:00
 
 
+def test_replies_delete_and_more_reactions():
+    first = post("messages", ALICE, room="c:general", text="Wer ist heute dabei?").json()["message"]
+    answer = post("messages", BOB, room="c:general", text="@Alice ich!", reply_to=first["id"]).json()["message"]
+    assert answer["reply"]["id"] == first["id"] and answer["reply"]["sender_name"] == "Alice"
+    elsewhere = post("messages", BOB, room="c:alcohol", text="x", reply_to=first["id"]).json()["message"]
+    assert elsewhere["reply"] is None  # answers only inside the same room
+    assert post("react", ALICE, message_id=answer["id"], emoji="🎉").status_code == 200
+    # only the author can delete, and it disappears from the room
+    assert post("messages/delete", ALICE, message_id=answer["id"]).status_code == 404
+    assert post("messages/delete", BOB, message_id=answer["id"]).status_code == 200
+    synced = post("sync", ALICE, room="c:general").json()
+    assert answer["id"] not in synced["recent_ids"] and first["id"] in synced["recent_ids"]
+
+
+def test_retention_and_feedback():
+    import os
+    old = post("messages", ALICE, room="c:general", text="alte Nachricht").json()["message"]
+    db = main.SessionLocal()
+    row = db.query(social.ChatMessageDB).get(old["id"])
+    row.created_at -= 8 * 86400  # older than a week
+    db.commit()
+    social._last_cleanup = 0
+    assert social._cleanup_old_messages(db) >= 1
+    assert db.query(social.ChatMessageDB).get(old["id"]) is None
+    db.close()
+    assert client.post("/feedback", json={"area": "faith", "text": "Im Gebet lernen fehlt etwas."}).status_code == 200
+    assert client.post("/feedback", json={"area": "nope", "text": "Hallo Welt"}).status_code == 400
+    assert client.get("/admin/feedback").status_code == 404  # no token configured: invisible
+    os.environ["FEEDBACK_ADMIN_TOKEN"] = "x" * 20
+    listed = client.get("/admin/feedback", headers={"X-Admin-Token": "x" * 20}).json()["feedback"]
+    assert listed[0]["area"] == "faith"
+
+
+def test_hardening():
+    # a non-object schedule is refused, and an old broken row never breaks helper matching
+    response = client.post("/community/social/sync", json={"author_id": "a" * 32, "author_name": "Hart", "helper_enabled": True, "helper_schedule": "[]"})
+    assert response.status_code == 400
+    broken = social.CommunityProfileDB(helper_schedule="[]", tz_offset=0)
+    assert social._available_by_schedule(broken, 1700521200)
+    # leaderboard numbers must look like the app's own
+    assert client.post("/sync", json={"username": "admin", "streak": 1, "longest_streak": 1, "total_focus_minutes": 0, "habits_prevented": 0}).status_code == 422
+    assert client.post("/sync", json={"username": "u-0123456789abcdef", "streak": 2147483647, "longest_streak": 1, "total_focus_minutes": 0, "habits_prevented": 0}).status_code == 422
+    assert client.post("/sync", json={"username": "u-0123456789abcdef", "streak": 3, "longest_streak": 3, "total_focus_minutes": 0, "habits_prevented": 0}).status_code == 200
+    # writes without a declared size are refused
+    assert client.post("/sync", content=b"{}", headers={"content-length": "", "content-type": "application/json"}).status_code in (411, 422)
+    # the old open forum and websocket chat are gone
+    assert client.get("/community/forum").status_code == 404
+
+
 if __name__ == "__main__":
+    test_hardening()
+    test_retention_and_feedback()
+    test_replies_delete_and_more_reactions()
     test_friends_dm_and_channels()
     test_media_reactions_block_report()
     test_challenges()

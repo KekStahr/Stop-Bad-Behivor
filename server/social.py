@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from sqlalchemy import Column, Float, Integer, String, Text, UniqueConstraint, inspect, text
 from sqlalchemy.orm import Session
 
-from main import Base, _validate_forum_identity, _validate_forum_media, app, engine, get_db
+from main import Base, _validate_forum_identity, _validate_forum_media, app, client_ip, engine, get_db
 
 SOCIAL_CHANNELS = [
     {"id": "general", "name": "Allgemein", "emoji": "💬"},
@@ -52,7 +52,10 @@ def _faith_allowed(target, faith):
 ADDICTION_NAMES = {channel["id"]: channel["name"] for channel in SOCIAL_CHANNELS}
 ONLINE_SECONDS = 90
 MAX_FRIENDS = 200
-REACTIONS = {"💪", "❤️", "🙏", "🔥", "🫂"}
+REACTIONS = {
+    "💪", "❤️", "🙏", "🔥", "🫂", "👍", "👏", "🙌", "😂", "😊", "🥰", "😢", "😮", "🤝", "💯", "✨",
+    "🌱", "🏆", "⭐", "🎉", "💚", "💙", "🌈", "☀️", "🕊️", "🤲", "✝️", "☪️", "👀", "😴",
+}
 REPORT_REASONS = {"spam", "harassment", "dealing", "danger", "other"}
 OFFER_TIMEOUT = 45          # seconds a trusted person has to answer
 SEARCH_LIMIT = 20 * 60      # stop searching after 20 minutes
@@ -121,6 +124,7 @@ class ChatMessageDB(Base):
     created_at = Column(Float, nullable=False)
     media_type = Column(String(32), nullable=True)
     media_data = Column(Text, nullable=True)
+    reply_to = Column(Integer, nullable=True)
 
 
 class BlockDB(Base):
@@ -202,7 +206,7 @@ def _ensure_columns():
             "accepted_at": "FLOAT", "session_ends_at": "FLOAT", "decide_started": "FLOAT",
             "votes": "TEXT", "feedback": "VARCHAR(20)",
         },
-        "community_messages": {"media_type": "VARCHAR(32)", "media_data": "TEXT"},
+        "community_messages": {"media_type": "VARCHAR(32)", "media_data": "TEXT", "reply_to": "INTEGER"},
     }
     inspector = inspect(engine)
     with engine.begin() as connection:
@@ -241,6 +245,7 @@ class FriendSchema(SocialBaseSchema):
 class MessageSchema(SocialBaseSchema):
     room: str
     text: str = ""
+    reply_to: Optional[int] = None
     media_type: Optional[str] = None
     media_data: Optional[str] = None
 
@@ -255,6 +260,10 @@ class ReportSchema(SocialBaseSchema):
     reason: str
     message_id: Optional[int] = None
     note: str = ""
+
+
+class DeleteSchema(SocialBaseSchema):
+    message_id: int
 
 
 class ReactSchema(SocialBaseSchema):
@@ -291,7 +300,7 @@ def _code(code):
 
 def _rate_limit(request: Request, bucket: str, limit: int, window: int = 60):
     now = time.monotonic()
-    key = (request.client.host if request.client else "unknown", bucket)
+    key = (client_ip(request), bucket)
     stamps = write_times.setdefault(key, deque())
     while stamps and now - stamps[0] > window:
         stamps.popleft()
@@ -318,7 +327,11 @@ def _profile(data, db):
     if data.helper_enabled is not None:
         profile.helper_enabled = 1 if data.helper_enabled else 0
     if data.helper_schedule is not None:
-        if len(data.helper_schedule) > 300:
+        try:
+            schedule = json.loads(data.helper_schedule) if data.helper_schedule else {}
+        except ValueError:
+            schedule = None
+        if len(data.helper_schedule) > 300 or not isinstance(schedule, dict):
             raise HTTPException(status_code=400, detail="Ungültige Verfügbarkeit.")
         profile.helper_schedule = data.helper_schedule
     if data.tz_offset is not None and -900 <= data.tz_offset <= 900:
@@ -391,6 +404,19 @@ def _messages_payload(rows, me, db):
             entry["counts"][reaction.emoji] = entry["counts"].get(reaction.emoji, 0) + 1
             if reaction.code == me:
                 entry["mine"].append(reaction.emoji)
+    # a short preview of the message being answered (only from the same room)
+    reply_ids = {row.reply_to for row in rows if row.reply_to}
+    replies = {}
+    if reply_ids:
+        for original in db.query(ChatMessageDB).filter(ChatMessageDB.id.in_(reply_ids)).all():
+            replies[original.id] = original
+
+    def reply_payload(row):
+        original = replies.get(row.reply_to)
+        if original is None or original.room != row.room:
+            return None
+        return {"id": original.id, "sender_name": sender(original)[1], "text": (original.text or "🖼️")[:140]}
+
     def sender(row):
         role = roles.get(row.room, {}).get(row.sender)
         if role:
@@ -409,7 +435,30 @@ def _messages_payload(rows, me, db):
         "mine": row.sender == me,
         "reactions": reactions.get(row.id, {}).get("counts", {}),
         "my_reactions": reactions.get(row.id, {}).get("mine", []),
+        "reply": reply_payload(row) if row.reply_to else None,
     } for row in rows]
+
+
+# Chats don't live forever: group, faith and crisis rooms keep 7 days, private messages 2 months.
+RETENTION_SECONDS = {"c": 7 * 86400, "f": 7 * 86400, "h": 7 * 86400, "d": 60 * 86400}
+_last_cleanup = 0.0
+
+
+def _cleanup_old_messages(db, now=None):
+    global _last_cleanup
+    now = now or time.time()
+    if now - _last_cleanup < 600:  # at most every 10 minutes
+        return 0
+    _last_cleanup = now
+    removed = 0
+    for prefix, age in RETENTION_SECONDS.items():
+        ids = [row_id for (row_id,) in db.query(ChatMessageDB.id).filter(ChatMessageDB.room.like(f"{prefix}:%"), ChatMessageDB.created_at < now - age).limit(5000).all()]
+        if ids:
+            db.query(MessageReactionDB).filter(MessageReactionDB.message_id.in_(ids)).delete(synchronize_session=False)
+            removed += db.query(ChatMessageDB).filter(ChatMessageDB.id.in_(ids)).delete(synchronize_session=False)
+    if removed:
+        db.commit()
+    return removed
 
 
 def _events(request):
@@ -431,6 +480,8 @@ def _available_by_schedule(profile, now):
     try:
         schedule = json.loads(profile.helper_schedule)
     except ValueError:
+        return True
+    if not isinstance(schedule, dict):  # older rows may hold anything – never let one profile break matching
         return True
     local = datetime.fromtimestamp(now, tz=timezone.utc) + timedelta(minutes=profile.tz_offset or 0)
     days = schedule.get("days")
@@ -553,6 +604,7 @@ def social_sync(data: SyncSchema, db: Session = Depends(get_db)):
     profile = _profile(data, db)
     me = profile.public_id
     now = time.time()
+    _cleanup_old_messages(db, now)
     relations = db.query(FriendshipDB).filter((FriendshipDB.requester == me) | (FriendshipDB.addressee == me)).all()
     others = [r.addressee if r.requester == me else r.requester for r in relations]
     blocked = _blocked_by_me(db, me)
@@ -574,7 +626,7 @@ def social_sync(data: SyncSchema, db: Session = Depends(get_db)):
             incoming.append(entry)
     friends.sort(key=lambda item: (not item["online"], item["name"].lower()))
 
-    messages, room_key = [], ""
+    messages, room_key, recent_ids = [], "", []
     if data.room:
         room_key = _resolve_room(data.room, me, db, faith=data.faith)
         query = db.query(ChatMessageDB).filter(ChatMessageDB.room == room_key)
@@ -585,6 +637,8 @@ def social_sync(data: SyncSchema, db: Session = Depends(get_db)):
         else:
             rows = list(reversed(query.order_by(ChatMessageDB.id.desc()).limit(60).all()))
         messages = _messages_payload(rows, me, db)
+        # ids still present lets clients drop messages someone deleted
+        recent_ids = [row_id for (row_id,) in query.with_entities(ChatMessageDB.id).order_by(ChatMessageDB.id.desc()).limit(80).all()]
 
     help_items = []
     for request in _open_help_for(me, db):
@@ -609,13 +663,15 @@ def social_sync(data: SyncSchema, db: Session = Depends(get_db)):
         "online_by_channel": online_by_channel,
         "helpers_online": db.query(CommunityProfileDB).filter(CommunityProfileDB.helper_enabled == 1, CommunityProfileDB.last_seen > now - ONLINE_SECONDS).count(),
         "room": data.room if room_key else "",
+        "recent_ids": recent_ids,
         "messages": messages,
         "help": help_items,
     }
 
 
 @app.post("/community/social/friends")
-def social_friends(data: FriendSchema, db: Session = Depends(get_db)):
+def social_friends(data: FriendSchema, request: Request, db: Session = Depends(get_db)):
+    _rate_limit(request, "friends", 20)
     me = _profile(data, db).public_id
     code = _code(data.code)
     if code == me:
@@ -660,13 +716,33 @@ def social_message(data: MessageSchema, request: Request, db: Session = Depends(
         raise HTTPException(status_code=400, detail="Nachrichten dürfen höchstens 1000 Zeichen enthalten.")
     if not text_value and not media_data:
         raise HTTPException(status_code=400, detail="Schreib etwas oder hänge ein Bild an.")
+    if media_data:
+        _rate_limit(request, "media", 15, 3600)  # images are big – a few per hour keep the database from filling up
     room = _resolve_room(data.room, profile.public_id, db, write=True, faith=data.faith)
+    reply_to = None
+    if data.reply_to:
+        original = db.query(ChatMessageDB).filter(ChatMessageDB.id == data.reply_to).first()
+        if original is not None and original.room == room:  # answers only inside the same conversation
+            reply_to = original.id
     message = ChatMessageDB(room=room, sender=profile.public_id, sender_name=profile.name, text=text_value,
-                            created_at=time.time(), media_type=media_type, media_data=media_data)
+                            created_at=time.time(), media_type=media_type, media_data=media_data, reply_to=reply_to)
     db.add(message)
     db.commit()
     db.refresh(message)
     return {"message": _messages_payload([message], profile.public_id, db)[0]}
+
+
+@app.post("/community/social/messages/delete")
+def social_delete_message(data: DeleteSchema, request: Request, db: Session = Depends(get_db)):
+    _rate_limit(request, "delete", 30)
+    me = _profile(data, db).public_id
+    message = db.query(ChatMessageDB).filter(ChatMessageDB.id == data.message_id).first()
+    if message is None or message.sender != me:
+        raise HTTPException(status_code=404, detail="Nur eigene Nachrichten lassen sich löschen.")
+    db.query(MessageReactionDB).filter(MessageReactionDB.message_id == message.id).delete()
+    db.delete(message)
+    db.commit()
+    return {"deleted": data.message_id}
 
 
 @app.post("/community/social/react")

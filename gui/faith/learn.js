@@ -5,9 +5,11 @@ import { escapeHtml } from "../api.js";
 import { openSheet } from "../ui.js";
 import { motionLevel } from "../prefs.js";
 import { faith, saveFaith } from "./state.js";
-import { FORMULAS, RULING_LABELS, ruling } from "./salah-text.js";
+import { FORMULAS, GUIDE_SURAHS, RULING_LABELS, ruling } from "./salah-text.js";
 import { TIMING } from "./salah-timing.js";
 import { fetchScripture } from "./ui.js";
+import { currentLanguage } from "../i18n.js";
+import { RECITATION_ID, ISLAM_TRADITIONS, CHRISTIAN_TRADITIONS } from "./data.js";
 
 // ---- the figure ----------------------------------------------------------------------------------
 // Side view, facing right (towards the Qibla / the altar). Joints in a 220 × 270 box.
@@ -32,6 +34,7 @@ const POSES = {
   cross4: { ...BASE, elbow: [120, 98], hand: [110, 82] },
 };
 POSES.qiyam = POSES.qiyamNavel;
+POSES.qunut = { ...POSES.stand, elbow: [120, 116], hand: [134, 98] };
 
 // What to pay attention to in each posture: numbered rings on the figure + the same numbers in the text.
 const FOCUS = {
@@ -43,6 +46,7 @@ const FOCUS = {
   sujud: [["head", "Stirn UND Nase berühren den Boden."], ["hand", "Hände flach neben dem Kopf, Finger geschlossen zur Qibla."], ["knee", "Beide Knie am Boden."], ["toe", "Zehenspitzen aufgestellt, zur Qibla gerichtet."], ["elbow", "Ellbogen vom Boden abheben, nicht auflegen."]],
   sit: [["foot", "Auf dem linken Fuß sitzen, der rechte Fuß bleibt aufgestellt (Zehen zur Qibla)."], ["hand", "Hände ruhig auf den Oberschenkeln, nahe den Knien."], ["neck", "Aufrecht sitzen, kurz zur Ruhe kommen."]],
   tashahhud: [["finger", "Rechten Zeigefinger heben bei „Aschhadu an lā ilāha illa llāh“ – das Glaubenszeugnis. Die übrigen Finger bleiben geschlossen."], ["foot", "Sitzhaltung wie beim Sitzen zwischen den Niederwerfungen: auf dem linken Fuß, rechter Fuß aufgestellt."]],
+  qunut: [["hand", "Hände vor der Brust erheben, Handflächen zum Himmel – wie beim Bittgebet."], ["head", "Blick bleibt unten, auf dem Platz der Niederwerfung."]],
   salamR: [["head", "Kopf nach rechts drehen, Blick über die rechte Schulter."]],
   salamL: [["head", "Kopf nach links drehen, Blick über die linke Schulter – das Gebet ist beendet."]],
   folded: [["hand", "Hände falten oder offen halten – wie es dir hilft, ruhig zu werden."]],
@@ -269,51 +273,92 @@ const CROSS = { latin: "In nomine Patris et Filii et Spiritus Sancti. Amen.", gr
 
 
 const NIYYA = { fajr: "Fadschr", dhuhr: "Dhuhr", asr: "Asr", maghrib: "Maghrib", isha: "Ischa" };
-// Quran.com recitation ids (word timings) for the reciter chosen in the settings
-const RECITATION_ID = { "ar.alafasy": 7, "ar.husary": 6, "ar.minshawi": 9, "ar.abdulbasitmurattal": 2, "ar.abdurrahmaansudais": 3 };
+
+// What is different in each school – shown above the steps after choosing it.
+export const TRADITION_NOTES = {
+  "sunni-hanafi": ["Hände unterhalb des Nabels, die rechte über der linken.", "Hände nur beim Eröffnungs-Takbīr heben.", "Eröffnungs-Bittgebet „Subḥānaka llāhumma …“, Taʿawwudh und Basmala leise.", "„Āmīn“ leise.", "Zeigefinger bei „lā ilāha“ heben, bei „illa llāh“ wieder senken.", "In beiden Sitzungen auf dem linken Fuß sitzen (Iftirāsch).", "Kein Qunūt im Fadschr – das Qunūt gehört zum Witr."],
+  "sunni-shafii": ["Hände auf der Brust bzw. zwischen Brust und Nabel.", "Hände heben beim Eröffnungs-Takbīr, vor dem Rukūʿ, beim Aufrichten und beim Aufstehen nach dem ersten Taschahhud.", "Meist das Eröffnungs-Bittgebet „Wadschdschahtu wadschhiya …“; das „Subḥānaka llāhumma …“ ist ebenfalls überliefert.", "Die Basmala gehört zur Fātiḥa und ist Pflicht – in lauten Gebeten laut.", "Qunūt im Fadschr: in der 2. Rakʿa nach dem Aufrichten vom Rukūʿ.", "Zeigefinger bei „illa llāh“ heben und bis zum Ende oben lassen.", "Im letzten Sitzen auf der linken Hüfte sitzen (Tawarruk)."],
+  "sunni-maliki": ["Hände locker an den Seiten (Sadl).", "Im Pflichtgebet kein Eröffnungs-Bittgebet, kein Taʿawwudh und keine Basmala – direkt „Al-ḥamdu lillāh …“.", "Qunūt im Fadschr: leise in der 2. Rakʿa vor dem Rukūʿ.", "Den Zeigefinger während des ganzen Taschahhud leicht hin und her bewegen.", "In allen Sitzungen Tawarruk.", "Ein Salām nach rechts beendet das Gebet."],
+  "sunni-hanbali": ["Hände unter dem Nabel oder auf der Brust – beides überliefert.", "Hände heben beim Eröffnungs-Takbīr, vor dem Rukūʿ und beim Aufrichten.", "Das „Allāhu akbar“ bei jedem Wechsel ist Wādschib – vergisst du es, folgt Sudschūd as-Sahw.", "Bei jeder Erwähnung Allahs im Taschahhud mit dem Zeigefinger zeigen.", "Tawarruk im letzten Sitzen von Gebeten mit zwei Sitzungen.", "Beide Salām-Grüße sind Pflicht."],
+  "shia-jafari": ["Hände an den Seiten; die Stirn wird auf natürliches Material gelegt (Turba).", "Hände bei jedem Takbīr bis zu den Ohren heben.", "Kein „Āmīn“ nach der Fātiḥa.", "Qunūt in jedem Gebet: in der 2. Rakʿa vor dem Rukūʿ.", "„Allāhu akbar“ auch nach dem Aufrichten vom Rukūʿ, vor dem Sudschūd.", "Eigener Wortlaut von Taschahhud und Salām; am Ende dreimal „Allāhu akbar“ mit erhobenen Händen.", "Lerne die Einzelheiten am besten mit deinem Imam – die Anleitung zeigt die gemeinsamen Grundzüge."],
+  catholic: ["Kreuzzeichen von links nach rechts: Stirn – Brust – linke – rechte Schulter.", "Das Vaterunser endet im persönlichen Gebet meist mit „… erlöse uns von dem Bösen. Amen.“", "Der Lobpreis „Denn dein ist das Reich …“ folgt in der Messe nach dem Embolismus des Priesters.", "Der Rosenkranz ist ein typisches katholisches Gebet (siehe Tracker)."],
+  protestant: ["Das Kreuzzeichen ist möglich, aber freiwillig.", "Das Vaterunser wird mit dem Lobpreis „Denn dein ist das Reich …“ gebetet.", "Freies Gebet in eigenen Worten hat einen hohen Stellenwert."],
+  orthodox: ["Kreuzzeichen mit drei zusammengelegten Fingern (Dreifaltigkeit), von rechts nach links: Stirn – Brust – rechte – linke Schulter.", "Der Lobpreis wird vom Priester gesprochen.", "Verneigungen und Metanien (Verbeugung bis zum Boden) begleiten das Gebet.", "Das Jesusgebet mit der Gebetsschnur ist sehr verbreitet."],
+  free: ["Das Gebet ist meist frei und persönlich; das Vaterunser wird gemeinsam gesprochen.", "Das Kreuzzeichen ist unüblich, aber nicht verboten.", "Der Lobpreis „Denn dein ist das Reich …“ wird mitgebetet."],
+};
+
+const QUNUT = {
+  "sunni-shafii": { translit: "Allāhumma hdinī fīman hadait, wa ʿāfinī fīman ʿāfait, wa tawallanī fīman tawallait, wa bārik lī fīmā aʿṭait, wa qinī scharra mā qaḍait, fa-innaka taqḍī wa lā yuqḍā ʿalaik, wa innahū lā yadhillu man wālait, tabārakta rabbanā wa taʿālait.", de: "O Allah, leite mich unter denen, die Du leitest, schenke mir Wohlergehen unter denen, denen Du es schenkst, nimm Dich meiner an unter denen, derer Du Dich annimmst, segne mir, was Du gegeben hast, und schütze mich vor dem Übel dessen, was Du bestimmt hast …", source: "Abū Dāwūd 1425, Tirmidhī 464" },
+  "sunni-maliki": { translit: "Allāhumma innā nastaʿīnuka wa nastaghfiruk, wa nuʾminu bika wa natawakkalu ʿalaik …", de: "O Allah, wir bitten Dich um Hilfe und um Vergebung, wir glauben an Dich und vertrauen auf Dich …", source: "nach malikitischer Überlieferung – leise gesprochen" },
+  "shia-jafari": { translit: "Rabbanā ātinā fi d-dunyā ḥasanatan wa fi l-āchirati ḥasanatan wa qinā ʿadhāba n-nār.", de: "Unser Herr, gib uns im Diesseits Gutes und im Jenseits Gutes und bewahre uns vor der Strafe des Feuers.", source: "Koran 2:201 – jedes Bittgebet ist möglich" },
+};
 
 function salahSteps(tradition, prayer, suras) {
-  const handsDown = tradition === "shia-jafari" || tradition === "sunni-maliki";
-  const qiyam = handsDown ? "stand" : tradition === "sunni-hanafi" ? "qiyamNavel" : "qiyamChest";
+  const hanafi = tradition === "sunni-hanafi";
+  const shafii = tradition === "sunni-shafii";
+  const maliki = tradition === "sunni-maliki";
+  const hanbali = tradition === "sunni-hanbali";
+  const jafari = tradition === "shia-jafari";
+  const handsDown = jafari || maliki;
+  const qiyam = handsDown ? "stand" : hanafi ? "qiyamNavel" : "qiyamChest";
+  const raise = shafii || hanbali || jafari; // raising the hands at the bow and when rising
+  const amin = jafari ? " Kein „Āmīn“ (dschaʿfaritisch)." : hanafi ? " Danach leise „Āmīn“." : " Danach „Āmīn“ – in lauten Gebeten hörbar.";
+  // finger: Hanafi lifts at "lā ilāha", Shafiʿi at "illa llāh", Hanbali points at each mention of Allah
+  const cue = hanafi ? { word: 2, until: 4, text: "☝️ Bei „lā ilāha“ den Zeigefinger heben – bei „illa llāh“ wieder senken" }
+    : shafii ? { word: 4, text: "☝️ Bei „illa llāh“ den Zeigefinger heben und oben lassen" }
+      : hanbali ? { word: 5, text: "☝️ Bei „Allāh“ mit dem Zeigefinger zeigen" }
+        : maliki ? { word: 0, text: "☝️ Den Zeigefinger leicht hin und her bewegen" } : null;
+  const move = "„Allāhu akbar“ beim Wechsel der Haltung";
   const F = (formula, extra) => ({ formula, ...extra });
+  const qunut = (rakah) => ({ pose: "qunut", title: "Qunūt – Bittgebet im Stehen", translitText: QUNUT[tradition].translit, text: QUNUT[tradition].de, note: QUNUT[tradition].source, rakah });
   const steps = [
     { pose: "stand", title: "Absicht (Niyya)", text: `Steh zur Qibla gewandt. Fasse im Herzen die Absicht: „Ich bete das ${NIYYA[prayer.id]}-Gebet – ${prayer.rakat} Rakʿāt – für Allah.“`, note: "Die Absicht muss nicht laut gesprochen werden.", rulings: ["niyya"] },
-    F("takbir", { pose: "takbir", title: "Takbīr – das Gebet beginnt", note: "Ab jetzt gehört deine ganze Aufmerksamkeit dem Gebet.", rulings: ["takbir_ihram", "raise_hands"] }),
-    F("opening", { pose: qiyam, title: "Eröffnungs-Bittgebet (Thanāʾ)", note: SALAH.opening.note, rulings: ["opening", "hands"], rakah: 1 }),
-    F("refuge", { pose: qiyam, title: "Zuflucht (Taʿawwudh)", note: "Die Basmala („Bismillāhi r-raḥmāni r-raḥīm“) folgt direkt am Anfang der Fātiḥa.", rulings: ["refuge"], rakah: 1 }),
+    F("takbir", { pose: "takbir", title: "Takbīr – das Gebet beginnt", note: "Hände heben und „Allāhu akbar“ sagen. Ab jetzt gehört deine ganze Aufmerksamkeit dem Gebet.", rulings: ["takbir_ihram", "raise_hands"] }),
   ];
+  if (!maliki) {
+    steps.push(
+      F("opening", { pose: qiyam, title: "Eröffnungs-Bittgebet (Thanāʾ)", note: shafii ? "Schafiʿiten sprechen meist „Wadschdschahtu wadschhiya …“ – dieses Bittgebet ist ebenfalls überliefert (Muslim 399)." : jafari ? "In der dschaʿfaritischen Praxis sind andere Eröffnungs-Bittgebete üblich." : "Leise gesprochen, nur in der ersten Rakʿa.", rulings: ["opening", "hands"], rakah: 1 }),
+      F("refuge", { pose: qiyam, title: "Zuflucht (Taʿawwudh)", note: "Die Basmala („Bismillāhi r-raḥmāni r-raḥīm“) folgt direkt am Anfang der Fātiḥa.", rulings: ["refuge"], rakah: 1 }),
+    );
+  }
   for (let rakah = 1; rakah <= prayer.rakat; rakah += 1) {
     if (rakah > 1) {
-      steps.push(F("takbir", { pose: "stand", title: `Aufstehen zur ${rakah}. Rakʿa`, note: "Mit „Allāhu akbar“ wieder aufstehen.", rulings: ["takbir_move"], rakah }));
+      steps.push(F("takbir", { pose: "stand", via: rakah === 3 && (shafii || jafari) ? "takbir" : null, transition: true, title: `Aufstehen zur ${rakah}. Rakʿa`, note: `Mit „Allāhu akbar“ wieder aufstehen.${rakah === 3 && shafii ? " Dabei die Hände heben." : ""}`, rulings: ["takbir_move"], rakah }));
     }
-    steps.push({ pose: qiyam, title: "Al-Fātiḥa", surah: 1, rakah, rulings: ["fatiha", "qiyam"], note: rakah > 2 ? "In der 3. und 4. Rakʿa wird nur die Fātiḥa rezitiert – keine weitere Sure. Danach leise „Āmīn“." : "Die Fātiḥa wird in jeder Rakʿa rezitiert. Danach leise „Āmīn“." });
+    const basmalaNote = maliki ? " Malikiten beginnen ohne Basmala direkt mit „Al-ḥamdu lillāh“ – die Rezitation enthält sie trotzdem." : shafii ? " Die Basmala ist hier Pflicht." : "";
+    steps.push({ pose: qiyam, title: "Al-Fātiḥa", surah: 1, rakah, rulings: shafii ? ["fatiha", "basmala", "qiyam"] : ["fatiha", "qiyam"], note: `${rakah > 2 ? "In der 3. und 4. Rakʿa wird nur die Fātiḥa rezitiert – keine weitere Sure." : "Die Fātiḥa wird in jeder Rakʿa rezitiert."}${amin}${basmalaNote}` });
     if (rakah <= 2) {
       const chosen = SHORT_SURAS.find((item) => item.surah === suras[rakah - 1]) || SHORT_SURAS[0];
       steps.push({ pose: qiyam, title: `Eine Sure: ${chosen.name}`, surah: chosen.surah, rakah, rulings: ["sura"], note: `In den ersten beiden Rakʿāt folgt nach der Fātiḥa eine weitere Sure – oben kannst du sie wählen (Rakʿa ${rakah}).` });
     }
+    if (rakah === 2 && (jafari || (maliki && prayer.id === "fajr"))) steps.push(qunut(rakah));
     steps.push(
-      F("ruku", { pose: "ruku", title: "Rukūʿ – die Verbeugung", repeat: 3, lead: "takbir", note: SALAH.ruku.note, rulings: ["ruku", "ruku_dhikr", "takbir_move"], rakah }),
-      F("rise", { pose: "stand", title: "Iʿtidāl – Aufrichten", note: SALAH.rise.note, rulings: ["rise", "rise_dhikr"], rakah }),
-      F("sujud", { pose: "sujud", title: "Sudschūd – die Niederwerfung", repeat: 3, lead: "takbir", note: SALAH.sujud.note, rulings: ["sujud", "sujud_dhikr", "takbir_move"], rakah }),
-      F("jalsa", { pose: "sit", title: "Sitzen zwischen den Niederwerfungen", lead: "takbir", rulings: ["jalsa", "jalsa_dhikr"], rakah }),
-      F("sujud", { pose: "sujud", title: "Zweite Niederwerfung", repeat: 3, lead: "takbir", note: "Genau wie die erste Niederwerfung.", rulings: ["sujud", "sujud_dhikr"], rakah }),
+      F("ruku", { pose: "ruku", via: raise ? "takbir" : null, title: "Rukūʿ – die Verbeugung", repeat: 3, lead: "takbir", note: `${move}: erst sagen, dabei mit geradem Rücken verbeugen, die Hände auf die Knie.${raise ? " Vorher die Hände heben." : ""}`, rulings: ["ruku", "ruku_dhikr", "takbir_move"], rakah }),
+      F("rise", { pose: "stand", via: raise ? "takbir" : null, transition: "rise", title: "Iʿtidāl – Aufrichten", note: `Beim Aufrichten sagst du statt „Allāhu akbar“: „Samiʿa llāhu liman ḥamidah“.${raise ? " Dabei die Hände heben." : ""} ${SALAH.rise.note}`, rulings: ["rise", "rise_dhikr"], rakah }),
+    );
+    if (rakah === 2 && shafii && prayer.id === "fajr") steps.push(qunut(rakah));
+    steps.push(
+      F("sujud", { pose: "sujud", title: "Sudschūd – die Niederwerfung", repeat: 3, lead: "takbir", note: `${move}: während du dich niederwirfst. Stirn, Nase, Hände, Knie und Zehen berühren den Boden – hier bist du Allah am nächsten.${jafari ? " Dschaʿfaritisch: vorher im Stehen noch einmal „Allāhu akbar“." : ""}`, rulings: ["sujud", "sujud_dhikr", "takbir_move"], rakah }),
+      F("jalsa", { pose: "sit", title: "Sitzen zwischen den Niederwerfungen", lead: "takbir", note: `${move}: beim Aufsetzen.`, rulings: ["jalsa", "jalsa_dhikr", "takbir_move"], rakah }),
+      F("sujud", { pose: "sujud", title: "Zweite Niederwerfung", repeat: 3, lead: "takbir", note: `${move}: beim erneuten Niederwerfen. Genau wie die erste Niederwerfung.`, rulings: ["sujud", "sujud_dhikr", "takbir_move"], rakah }),
     );
     if (rakah === 2 && prayer.rakat > 2) {
       steps.push(
-        F("tashahhud", { pose: "sit", title: "Erstes Sitzen – Taschahhud", note: "Nach der 2. Rakʿa nur das Taschahhud sprechen, dann zur nächsten Rakʿa aufstehen. Der Finger bleibt hier noch unten.", rulings: ["first_tashahhud"], rakah }),
-        F("shahada", { pose: "tashahhud", title: "Erstes Sitzen – Glaubenszeugnis", note: "Erst jetzt, bei „Aschhadu …“, den rechten Zeigefinger heben.", rulings: ["first_tashahhud", "finger"], rakah }),
+        F("tashahhud", { pose: maliki ? "tashahhud" : "sit", lead: "takbir", title: "Erstes Sitzen – Taschahhud", note: `${move}: beim Aufsetzen. Nach der 2. Rakʿa nur das Taschahhud sprechen, dann zur nächsten Rakʿa aufstehen.${maliki || jafari ? "" : " Der Finger bleibt hier noch unten."}`, rulings: ["first_tashahhud", "takbir_move"], rakah }),
+        F("shahada", { pose: jafari ? "sit" : "tashahhud", cue, title: "Erstes Sitzen – Glaubenszeugnis", note: jafari ? "Dschaʿfaritisch ohne Fingerheben." : cue.text.slice(3), rulings: jafari ? ["first_tashahhud"] : ["first_tashahhud", "finger"], rakah }),
       );
     }
   }
   const last = prayer.rakat;
+  const sitNote = shafii || maliki || (hanbali && prayer.rakat > 2) ? " Im letzten Sitzen auf der linken Hüfte sitzen, beide Füße nach rechts (Tawarruk)." : "";
   steps.push(
-    F("tashahhud", { pose: "sit", title: "Letztes Sitzen – Taschahhud", note: "Bei „At-taḥiyyātu …“ bleibt der Finger noch unten – er wird erst beim Glaubenszeugnis gehoben.", rulings: ["last_sitting", "last_tashahhud"], rakah: last }),
-    F("shahada", { pose: "tashahhud", title: "Glaubenszeugnis – Finger heben", note: "Bei „Aschhadu an lā ilāha illa llāh“ den rechten Zeigefinger heben, die übrigen Finger bleiben geschlossen.", rulings: ["last_tashahhud", "finger"], rakah: last }),
+    F("tashahhud", { pose: maliki ? "tashahhud" : "sit", lead: "takbir", title: "Letztes Sitzen – Taschahhud", note: `${move}: beim Aufsetzen nach der Niederwerfung.${maliki ? "" : " Bei „At-taḥiyyātu …“ bleibt der Finger noch unten."}${sitNote}`, rulings: ["last_sitting", "last_tashahhud", "takbir_move"], rakah: last }),
+    F("shahada", { pose: jafari ? "sit" : "tashahhud", cue, title: jafari ? "Glaubenszeugnis" : "Glaubenszeugnis – Finger", note: jafari ? "Dschaʿfaritisch ohne Fingerheben." : cue.text.slice(3), rulings: jafari ? ["last_tashahhud"] : ["last_tashahhud", "finger"], rakah: last }),
     F("salawat", { pose: "sit", title: "Ṣalawāt Ibrāhīmiyya", rulings: ["salawat"], rakah: last }),
     F("protection", { pose: "sit", title: "Bittgebet vor dem Salām", note: "Der Prophet ﷺ lehrte, vor dem Salām Zuflucht vor diesen vier Dingen zu suchen (Muslim 588).", rulings: ["protection"], rakah: last }),
-    F("salam", { pose: "salamR", title: "Friedensgruß nach rechts", note: "Den Kopf nach rechts drehen.", rulings: ["salam_right"] }),
-    F("salam", { pose: "salamL", title: "Friedensgruß nach links", note: "Den Kopf nach links drehen – das Gebet ist beendet.", rulings: ["salam_left"] }),
+    F("salam", { pose: "salamR", title: "Friedensgruß nach rechts", note: maliki ? "Den Kopf nach rechts drehen – nach malikitischer Lehre beendet dieser eine Gruß das Gebet." : "Den Kopf nach rechts drehen.", rulings: ["salam_right"] }),
   );
+  if (!maliki) steps.push(F("salamLeft", { pose: "salamL", title: "Friedensgruß nach links", note: jafari ? "Danach dreimal „Allāhu akbar“ mit erhobenen Händen." : "Den Kopf nach links drehen – das Gebet ist beendet.", rulings: ["salam_left"] }));
   return steps;
 }
 
@@ -329,17 +374,23 @@ function christianSteps(tradition) {
 
 // ---- the sheet ------------------------------------------------------------------------------------
 export function openLearn(religion) {
-  const tradition = religion === "islam" ? faith().islamTradition : faith().christianTradition;
+  let tradition = religion === "islam" ? faith().islamTradition : faith().christianTradition;
+  const traditions = religion === "islam" ? ISLAM_TRADITIONS : CHRISTIAN_TRADITIONS;
   let prayer = PRAYER_TYPES[0];
-  let suras = [103, 108]; // the two shortest suras by default – the prayer is learned quickly
+  let suras = [112, 103]; // Al-Ichlāṣ from the own recording, then Al-ʿAṣr – both short and well known
   let steps = religion === "islam" ? salahSteps(tradition, prayer, suras) : christianSteps(tradition);
   const quranCache = {};
   let index = 0;
-  let lang = (navigator.language || "de").slice(0, 2);
+  let lang = currentLanguage();
   if (!LANGS.some(([id]) => id === lang)) lang = "de";
   let original = tradition === "orthodox" ? "greek" : "latin";
   let show = { original: true, translit: true, translation: true };
   let playing = false; // tutorial runs through by itself
+  let held = false; // paused – ▶ continues exactly there
+  let wordActive = false; // a tapped word is sounding
+  let resumeTick = null; // continues highlighting after a pause
+  let stepDone = false;
+  let poseTimer;
   let sound = true;
   let rate = 1;
   let tapMode = "here"; // "here": play on from the word · "word": only this word
@@ -361,7 +412,7 @@ export function openLearn(religion) {
   const { dialog } = openSheet({
     title: religion === "islam" ? "Gebet lernen – die Ṣalāh" : "Gebet lernen – das Vaterunser",
     wide: true,
-    onClose: () => { playing = false; run += 1; clearTimeout(timer); clearInterval(crossTimer); stopSound(); },
+    onClose: () => { playing = false; run += 1; clearTimeout(timer); clearTimeout(poseTimer); clearInterval(crossTimer); stopSound(); },
     body: `
       <div class="learn">
         <div class="learn-stage">
@@ -383,6 +434,7 @@ export function openLearn(religion) {
         </div>
         <div class="learn-text">
           <div class="learn-options">
+            <label class="reader-field learn-school"><span>${religion === "islam" ? "Rechtsschule" : "Konfession"}</span><select id="learn-tradition">${traditions.map(([id, label]) => `<option value="${id}" ${id === tradition ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select></label>
             ${religion === "islam" ? `
               <label class="reader-field"><span>Gebet</span><select id="learn-prayer">${PRAYER_TYPES.map((item) => `<option value="${item.id}">${item.label}</option>`).join("")}</select></label>
               <label class="reader-field"><span>Sure in Rakʿa 1</span><select data-sura="0">${SHORT_SURAS.map((item) => `<option value="${item.surah}" ${item.surah === suras[0] ? "selected" : ""}>${item.name}</option>`).join("")}</select></label>
@@ -395,6 +447,7 @@ export function openLearn(religion) {
               <label><input type="checkbox" data-show="translation" checked> Übersetzung</label>
             </span>
           </div>
+          <details class="learn-school-notes" id="learn-school-notes" open></details>
           ${religion === "islam" ? `
             <div class="learn-wordbar">
               <span>Wort antippen:</span>
@@ -406,9 +459,7 @@ export function openLearn(religion) {
           ${religion === "islam" ? `<details class="learn-legend"><summary>Was bedeuten Pflicht, Wādschib und Sunnah?</summary>
             ${Object.values(RULING_LABELS).map((item) => `<p><span class="ruling ${item.tone}">${item.short}</span> ${escapeHtml(item.long.split(" – ")[1] || item.long)}</p>`).join("")}
             <p>Außerdem gilt für alle Haltungen: <strong>Ruhe (Ṭumaʾnīna)</strong> – in jeder Haltung kurz zur Ruhe kommen, nicht hetzen. Nach den gängigen Positionen der Rechtsschulen; im Zweifel frag deinen Imam.</p></details>` : ""}
-          ${religion === "islam" && tradition === "shia-jafari" ? '<p class="muted small">Hinweis: Die Anleitung folgt der verbreiteten sunnitischen Form. In der schiitischen Praxis gibt es Unterschiede (z. B. Hände an den Seiten, Qunūt in der 2. Rakʿa, eigener Wortlaut des Taschahhud, Niederwerfung auf natürlichem Material). Lerne die Details am besten mit deinem Imam.</p>' : ""}
           <p class="muted small" id="learn-voice-hint" hidden></p>
-          ${religion === "islam" ? '<p class="muted small learn-credits">🎧 Audio: Koran-Rezitation mit Wort-Zeitstempeln von Quran.com (dein gewählter Rezitator), Taʿawwudh von Mishary Alafasy, Takbīr von Lingua Libre (CC0). Für die übrigen Formeln gibt es noch keine geprüfte Aufnahme – dort läuft der Mitlese-Modus.</p>' : ""}
         </div>
       </div>`,
   });
@@ -423,7 +474,7 @@ export function openLearn(religion) {
     return {
       words: formula.words.map(([ar, lat]) => ({ ar, lat })),
       phrases: formula.phrases.map(([from, to, tr]) => ({ from, to, text: tr[lang] || tr.de })),
-      clips: formula.clips.map((clip, i) => ({ url: clip.url, end: clip.end, words: clip.words, times: TIMING[key]?.[i] || [] })),
+      clips: formula.clips.map((clip, i) => ({ url: clip.url, start: clip.start, end: clip.end, words: clip.words, reps: clip.reps || 1, times: TIMING[key]?.[i] || [] })),
       cue: formula.cue,
     };
   }
@@ -454,6 +505,12 @@ export function openLearn(religion) {
         phrases.push({ from, to: words.length - 1, text: translation.data.ayahs[vi]?.text || "", marker: verse.verse_number });
       });
       const lastStamp = rec.audio_file.timestamps.at(-1);
+      const guide = GUIDE_SURAHS[surah];
+      if (guide && guide.words.length === words.length) {
+        // the user's own recording, slow and clear – same voice as the rest of the prayer
+        quranCache[key] = { words, phrases, clips: [{ url: guide.clip.url, start: guide.clip.start, end: guide.clip.end, words: [0, words.length - 1], reps: 1, times: TIMING[`surah${surah}`][0] }] };
+        return quranCache[key];
+      }
       quranCache[key] = { words, phrases, clips: [{ url: rec.audio_file.audio_url, start: (rec.audio_file.timestamps[0]?.timestamp_from || 0) / 1000, end: lastStamp ? lastStamp.timestamp_to / 1000 + 0.15 : undefined, words: [0, words.length - 1], times }] };
     }
     return quranCache[key];
@@ -476,7 +533,7 @@ export function openLearn(religion) {
     if (phrase >= 0) box.querySelector(`.lp[data-p="${phrase}"]`)?.classList.add("is-now");
     box.querySelectorAll(".lw").forEach((node) => node.classList.toggle("is-done", Number(node.dataset.w) < wordIndex));
     const cue = dialog.querySelector("#learn-cue");
-    const active = media.cue && wordIndex >= media.cue.word && wordIndex < media.cue.word + 6;
+    const active = media.cue && wordIndex >= media.cue.word && wordIndex < (media.cue.until ?? media.words.length);
     cue.hidden = !active;
     if (active) cue.textContent = media.cue.text;
     svg.classList.toggle("cue-on", Boolean(active));
@@ -498,6 +555,7 @@ export function openLearn(religion) {
         audio.preservesPitch = true;
         let echoed = new Set();
         const finish = () => {
+          resumeTick = null;
           cancelAnimationFrame(frame);
           audio?.pause();
           if (onlyWord || ci === media.clips.length - 1) resolve();
@@ -507,7 +565,12 @@ export function openLearn(religion) {
           if (token !== run || !audio) return;
           const t = audio.currentTime;
           let current = -1;
-          clip.times.forEach(([t0, t1], i) => { if (t >= t0 - 0.03 && t < t1) current = clip.words[0] + i; });
+          const span = clip.words[1] - clip.words[0] + 1;
+          clip.times.forEach(([t0, t1], i) => { if (t >= t0 - 0.03 && t < t1) current = clip.words[0] + (i % span); });
+          if (clip.reps > 1 && !onlyWord) {
+            const k = clip.times.findIndex(([t0, t1]) => t >= t0 - 0.03 && t < t1);
+            if (k >= 0) dialog.querySelector("#learn-repeat").textContent = `${Math.floor(k / span) + 1}. von ${clip.reps}`;
+          }
           if (current >= 0) highlight(current);
           // "Nachsprechen": pause after each phrase, as long as the phrase took
           if (echo && !onlyWord) {
@@ -519,7 +582,7 @@ export function openLearn(religion) {
               const cue = dialog.querySelector("#learn-cue");
               cue.hidden = false;
               cue.textContent = "🎤 Jetzt du – sprich es nach";
-              setTimeout(() => { if (token === run && audio) { cue.hidden = true; audio.play().catch(finish); frame = requestAnimationFrame(tick); } }, length * 1100 + 600);
+              setTimeout(() => { if (token === run && audio && !held) { cue.hidden = true; audio.play().catch(finish); frame = requestAnimationFrame(tick); } }, length * 1100 + 600);
               return;
             }
           }
@@ -529,6 +592,7 @@ export function openLearn(religion) {
         audio.addEventListener("ended", finish);
         audio.addEventListener("error", finish);
         audio.addEventListener("loadedmetadata", () => { audio.currentTime = startAt; }, { once: true });
+        resumeTick = tick;
         try {
           await audio.play();
           frame = requestAnimationFrame(tick);
@@ -545,13 +609,17 @@ export function openLearn(religion) {
   // a calm speaking pace for read-along: ~0.09 s per letter, at least 0.45 s per word
   const readTime = (latin) => Math.max(450, latin.replace(/[^a-zA-Zāīūḥḍṣṭẓʿʾ]/g, "").length * 90);
 
-  const playUrl = (url, token) => new Promise((resolve) => {
+  // plays one cut of a recording (start/end in seconds)
+  const playClip = (clip, token) => new Promise((resolve) => {
     if (token !== run) return resolve();
-    audio = new Audio(url);
+    audio = new Audio(clip.url);
     audio.playbackRate = rate;
-    audio.addEventListener("ended", resolve);
-    audio.addEventListener("error", resolve);
-    audio.play().catch(resolve);
+    const done = () => { clearInterval(watch); audio?.pause(); resolve(); };
+    const watch = setInterval(() => { if (token !== run || (clip.end && audio && audio.currentTime >= clip.end)) done(); }, 40);
+    audio.addEventListener("ended", done);
+    audio.addEventListener("error", done);
+    if (clip.start) audio.addEventListener("loadedmetadata", () => { audio.currentTime = clip.start; }, { once: true });
+    audio.play().catch(done);
     return undefined;
   });
 
@@ -561,6 +629,16 @@ export function openLearn(religion) {
       const text = step.line ? step.line.tr[lang] : step.tr?.[lang] || step.text;
       if (!(await speak(text, lang))) await new Promise((resolve) => { setTimeout(resolve, 2500); });
       return;
+    }
+    if (step.lead) {
+      // the posture changes WHILE "Allāhu akbar" is said
+      const banner = dialog.querySelector("#learn-move");
+      banner?.classList.add("is-now");
+      posture(step);
+      for (const clip of FORMULAS[step.lead].clips) await playClip(clip, token);
+      banner?.classList.remove("is-now");
+      if (token !== run) return;
+      await new Promise((resolve) => { setTimeout(resolve, 350); });
     }
     if (!media) return;
     if (!media.clips.length) {
@@ -580,9 +658,8 @@ export function openLearn(religion) {
       }
       return;
     }
-    // the takbīr that leads into the posture is said once, the formula as often as in the prayer
-    if (step.lead) for (const clip of FORMULAS[step.lead].clips) await playUrl(clip.url, token);
-    const repeat = Math.min(step.repeat || 1, 3);
+    // the recording already contains the repetitions (e.g. 3× in Rukūʿ) – then it plays once
+    const repeat = media.clips[0].reps > 1 ? 1 : Math.min(step.repeat || 1, 3);
     for (let i = 0; i < repeat; i += 1) {
       if (token !== run) return;
       if (repeat > 1) dialog.querySelector("#learn-repeat").textContent = `${i + 1}. von ${repeat}`;
@@ -593,7 +670,7 @@ export function openLearn(religion) {
   }
 
   // ---- drawing --------------------------------------------------------------------------------------
-  const POSE_NAMES = { stand: "Stehen (Qiyām)", takbir: "Takbīr", qiyamNavel: "Stehen (Qiyām)", qiyamChest: "Stehen (Qiyām)", ruku: "Verbeugung (Rukūʿ)", sujud: "Niederwerfung (Sudschūd)", sit: "Sitzen (Dschalsa)", tashahhud: "Sitzen mit Taschahhud", salamR: "Salām rechts", salamL: "Salām links", folded: "Stehen, Hände gefaltet", bow: "Verneigung", kneel: "Knien", cross1: "Kreuzzeichen" };
+  const POSE_NAMES = { stand: "Stehen (Qiyām)", takbir: "Takbīr", qiyamNavel: "Stehen (Qiyām)", qiyamChest: "Stehen (Qiyām)", ruku: "Verbeugung (Rukūʿ)", sujud: "Niederwerfung (Sudschūd)", sit: "Sitzen (Dschalsa)", tashahhud: "Sitzen mit Taschahhud", salamR: "Salām rechts", salamL: "Salām links", qunut: "Stehen mit Bittgebet (Qunūt)", folded: "Stehen, Hände gefaltet", bow: "Verneigung", kneel: "Knien", cross1: "Kreuzzeichen" };
 
   function renderStep(step) {
     const box = dialog.querySelector("#learn-step");
@@ -625,7 +702,9 @@ export function openLearn(religion) {
       <div class="learn-head">${step.rakah ? `<span class="learn-rakah">Rakʿa ${step.rakah} von ${prayer.rakat}</span>` : ""}<span class="learn-repeat" id="learn-repeat"></span><span class="learn-count">Schritt ${index + 1} von ${steps.length}</span></div>
       <h3>${escapeHtml(step.title)}${step.repeat ? ` <small>× ${step.repeat}</small>` : ""}</h3>
       ${rulingsHtml ? `<div class="learn-rulings">${rulingsHtml}</div>` : ""}
+      ${step.lead || step.transition ? `<div class="learn-move" id="learn-move">🔄 ${step.transition === "rise" ? "Wechsel zum Stehen mit „Samiʿa llāhu liman ḥamidah“ – hier kein „Allāhu akbar“" : "Wechsel der Haltung mit <b>„Allāhu akbar“</b> – sprich es, während du dich bewegst"}${step.via === "takbir" ? " · Hände heben" : ""}</div>` : ""}
       ${focus.length ? `<div class="learn-focus"><strong>Achte auf:</strong><ol>${focus.map(([, text]) => `<li>${escapeHtml(text)}</li>`).join("")}</ol></div>` : ""}
+      ${step.translitText ? `<p class="learn-translit">${escapeHtml(step.translitText)}</p>` : ""}
       ${step.text ? `<p class="learn-plain">${escapeHtml(step.text)}</p>` : ""}
       ${body}
       ${step.note ? `<p class="learn-note">💡 ${escapeHtml(step.note)}</p>` : ""}
@@ -650,22 +729,29 @@ export function openLearn(religion) {
 
   async function draw() {
     const token = ++run;
+    held = false;
+    stepDone = false;
     stopSound();
     clearTimeout(timer);
+    clearTimeout(poseTimer);
     clearInterval(crossTimer);
     const step = steps[index];
+    updatePlay();
     if (step.cross) {
       const seq = tradition === "orthodox" ? ["cross1", "cross2", "cross4", "cross3"] : ["cross1", "cross2", "cross3", "cross4"];
       let i = 0;
       moveTo(seq[0]);
       crossTimer = setInterval(() => { i = (i + 1) % (seq.length + 1); moveTo(i === seq.length ? "folded" : seq[i], 600); }, 1000);
-    } else moveTo(step.pose);
+    } else if (!(playing && sound && step.lead && religion === "islam")) posture(step);
     svg.classList.remove("cue-on");
     dialog.querySelector("#learn-cue").hidden = true;
     const poseKey = step.pose === "qiyam" ? "qiyamNavel" : step.pose;
     dialog.querySelector("#learn-pose-name").textContent = POSE_NAMES[step.cross ? "cross1" : poseKey] || "";
     media = null;
-    if (religion === "islam" && step.formula) media = formulaMedia(step.formula);
+    if (religion === "islam" && step.formula) {
+      media = formulaMedia(step.formula);
+      if ("cue" in step) media.cue = step.cue;
+    }
     renderStep(step);
     drawProgress();
     dialog.querySelector("#learn-prev").disabled = index === 0;
@@ -683,19 +769,28 @@ export function openLearn(religion) {
     const started = Date.now();
     await playStep(step, token);
     if (token !== run || !playing) return;
+    stepDone = true;
     const minimum = sound ? 1200 : 5000; // give the posture time even without sound
     timer = setTimeout(() => {
-      if (token !== run || !playing) return;
+      if (token !== run || !playing || held) return;
       if (index < steps.length - 1) { index += 1; draw(); } else { playing = false; updatePlay(); }
     }, Math.max(900, minimum - (Date.now() - started)));
   }
-  const updatePlay = () => {
+  function updatePlay() {
     const button = dialog.querySelector("#learn-play");
-    button.textContent = playing ? "⏸" : "▶";
-    button.setAttribute("aria-label", playing ? "Pause" : "Tutorial abspielen");
-  };
+    const active = (playing || wordActive) && !held;
+    button.textContent = active ? "⏸" : "▶";
+    button.setAttribute("aria-label", active ? "Pause" : held ? "Weiter abspielen" : "Tutorial abspielen");
+  }
+  function posture(step) {
+    clearTimeout(poseTimer);
+    if (!step.via) return moveTo(step.pose);
+    moveTo(step.via, 450); // e.g. raise the hands first, then bow
+    poseTimer = setTimeout(() => moveTo(step.pose, 750), 550);
+    return undefined;
+  }
   const rebuild = () => {
-    steps = salahSteps(tradition, prayer, suras);
+    steps = religion === "islam" ? salahSteps(tradition, prayer, suras) : christianSteps(tradition);
     index = Math.min(index, steps.length - 1);
     draw();
   };
@@ -710,10 +805,12 @@ export function openLearn(religion) {
     }
     const word = Number(node.dataset.w);
     playing = false;
-    updatePlay();
+    held = false;
+    wordActive = true;
     const token = ++run;
     stopSound();
     clearTimeout(timer);
+    updatePlay();
     const times = tapMode === "word" && loopWord ? 3 : 1;
     for (let i = 0; i < times; i += 1) {
       if (token !== run) return;
@@ -721,17 +818,46 @@ export function openLearn(religion) {
       await playFrom(word, { onlyWord: tapMode === "word", token });
       if (times > 1) await new Promise((resolve) => { setTimeout(resolve, 450); });
     }
-    if (token === run) highlight(-1);
+    if (token === run) {
+      highlight(-1);
+      wordActive = false;
+      updatePlay();
+    }
   });
 
   dialog.querySelector("#learn-prev").addEventListener("click", () => { if (index > 0) { index -= 1; draw(); } });
   dialog.querySelector("#learn-next").addEventListener("click", () => { index = index === steps.length - 1 ? 0 : index + 1; draw(); });
+  // ▶/⏸ pauses and continues at the same spot – also after tapping a word
   dialog.querySelector("#learn-play").addEventListener("click", () => {
-    playing = !playing;
-    updatePlay();
-    if (playing) draw();
-    else { run += 1; clearTimeout(timer); stopSound(); }
+    if (held) {
+      held = false;
+      if (audio && !audio.ended && resumeTick) {
+        audio.play().catch(() => {});
+        frame = requestAnimationFrame(resumeTick);
+        updatePlay();
+      } else if (playing) {
+        if (stepDone && index < steps.length - 1) index += 1;
+        draw();
+      } else updatePlay();
+      return;
+    }
+    if (playing || wordActive) {
+      held = true;
+      cancelAnimationFrame(frame);
+      if (audio && resumeTick) audio.pause();
+      else { // read-along or between steps: stop here, ▶ continues with this step
+        run += 1;
+        clearTimeout(timer);
+        stopSound();
+        wordActive = false;
+      }
+      updatePlay();
+      return;
+    }
+    playing = true;
+    draw();
   });
+  dialog.querySelector("#learn-tradition").addEventListener("change", (event) => { tradition = event.target.value; drawSchool(); rebuild(); });
   dialog.querySelector("#learn-sound").addEventListener("click", (event) => {
     sound = !sound;
     event.currentTarget.textContent = sound ? "🔊" : "🔇";
@@ -752,7 +878,13 @@ export function openLearn(religion) {
     if (event.key === "ArrowLeft") dialog.querySelector("#learn-prev").click();
     if (event.key === " ") { event.preventDefault(); dialog.querySelector("#learn-play").click(); }
   });
+  function drawSchool() {
+    const notes = TRADITION_NOTES[tradition] || [];
+    const name = traditions.find(([id]) => id === tradition)?.[1] || "";
+    dialog.querySelector("#learn-school-notes").innerHTML = `<summary>Besonderheiten: ${escapeHtml(name)}</summary><ul>${notes.map((note) => `<li>${escapeHtml(note)}</li>`).join("")}</ul>`;
+  }
   window.speechSynthesis?.getVoices(); // voices load lazily
+  drawSchool();
   draw();
 }
 

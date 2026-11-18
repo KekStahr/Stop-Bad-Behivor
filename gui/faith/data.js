@@ -378,7 +378,7 @@ export const TRACKER = {
     { id: "morning", label: "Morgengebet" }, { id: "bible", label: "Bibel gelesen" }, { id: "evening", label: "Abendgebet" },
     { id: "rosary", label: "Rosenkranz", traditions: ["catholic"] }, { id: "jesus", label: "Jesusgebet", traditions: ["orthodox"] },
     { id: "thanks", label: "Dankgebet", extra: true }, { id: "examen", label: "Tagesrückblick", extra: true }, { id: "service", label: "Gottesdienst", extra: true },
-    { id: "fast", label: "Verzicht / Fasten", extra: true }, { id: "deed", label: "Gute Tat", extra: true },
+    { id: "verzicht", label: "Verzicht / Fasten", extra: true }, { id: "deed", label: "Gute Tat", extra: true },
   ],
 };
 
@@ -404,6 +404,8 @@ export const RECITERS = [
   ["ar.alafasy", "Mishary Alafasy"], ["ar.husary", "Mahmoud Khalil Al-Husary"], ["ar.minshawi", "Mohamed Siddiq Al-Minshawi"],
   ["ar.abdulbasitmurattal", "Abdul Basit (Murattal)"], ["ar.abdurrahmaansudais", "Abdurrahmaan As-Sudais"],
 ];
+// Quran.com recitation ids (word timings) for each reciter
+export const RECITATION_ID = { "ar.alafasy": 7, "ar.husary": 6, "ar.minshawi": 9, "ar.abdulbasitmurattal": 2, "ar.abdurrahmaansudais": 3 };
 export const BIBLE_TRANSLATIONS = [
   ["elberfelder1905", "Deutsch – Elberfelder (1905)"], ["schlachter", "Deutsch – Schlachter (1951)"], ["luther1545", "Deutsch – Luther (1545)"], ["elberfelder", "Deutsch – Elberfelder (1871)"],
   ["kjv", "English – King James"], ["web", "English – World English Bible"], ["douayrheims", "English – Douay-Rheims (katholisch)"],

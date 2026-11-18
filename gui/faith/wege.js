@@ -2,9 +2,9 @@
 // Every tool offers the same depth for both religions.
 import { api, escapeHtml } from "../api.js";
 import { openSheet, confirmSheet } from "../ui.js";
-import { RELIGIONS, VERSES, BIBLE_BOOKS, SURAHS } from "./data.js";
+import { RELIGIONS, VERSES, BIBLE_BOOKS, SURAHS, TRACKER, COUNTERS } from "./data.js";
 import { faith, saveFaith } from "./state.js";
-import { EMOTIONS, HADITH, CHRISTIAN_WORDS, ASMA, GOD_NAMES, STORIES, STEPS, PLANS, FREEDOM, GOOD_DEEDS, GUIDES, MYSTERIES, MYSTERY_OF_DAY, REVIEW, FAITH_HELP } from "./content.js";
+import { EMOTIONS, HADITH, CHRISTIAN_WORDS, ASMA, GOD_NAMES, STORIES, PLANS, FREEDOM, GOOD_DEEDS, GUIDES, MYSTERIES, MYSTERY_OF_DAY, REVIEW, FAITH_HELP } from "./content.js";
 import { badge, verseCard, bindVerseCard, openStillness } from "./ui.js";
 import { openLearn } from "./learn.js";
 
@@ -39,15 +39,17 @@ export function nameOfDay(religion) {
   return { name: item[0], meaning: item[1], target: { religion: "christian", book: item[2], chapter: item[3], verse: item[4] } };
 }
 
-function stats() {
+// Everything is counted per religion – a prayer or good deed for one never counts for the other.
+function stats(religion) {
   const current = faith();
   const since = Date.now() - 30 * 86400000;
-  const prayers = Object.entries(current.trackerLog).filter(([day]) => new Date(day).getTime() >= since).reduce((sum, [, entry]) => sum + Object.values(entry).filter(Boolean).length, 0);
-  const chapters = (current.readChapters.islam || []).length + (current.readChapters.christian || []).length;
-  const dhikr = Object.values(current.counters).reduce((sum, value) => sum + value, 0);
+  const ids = new Set(TRACKER[religion].map((item) => item.id));
+  const prayers = Object.entries(current.trackerLog).filter(([day]) => new Date(day).getTime() >= since).reduce((sum, [, entry]) => sum + Object.entries(entry).filter(([id, done]) => done && ids.has(id)).length, 0);
+  const counterIds = new Set(COUNTERS[religion].map((item) => item.id));
+  const dhikr = Object.entries(current.counters).filter(([id]) => counterIds.has(id)).reduce((sum, [, value]) => sum + value, 0);
   return [
-    ["🙏", prayers, "Gebete in 30 Tagen"], ["📖", chapters, "Kapitel & Suren gelesen"], ["📿", dhikr, "Gebete gezählt"],
-    ["✍️", current.journal.length, "Tagebuch-Einträge"], ["🤝", current.deeds.length, "gute Taten"], ["👣", Object.values(current.steps).filter((step) => step.done).length, "von 12 Schritten"],
+    ["🙏", prayers, "Gebete in 30 Tagen"], ["📖", (current.readChapters[religion] || []).length, religion === "islam" ? "Suren gelesen" : "Kapitel gelesen"], ["📿", dhikr, religion === "islam" ? "Dhikr gezählt" : "Gebete gezählt"],
+    ["✍️", current.journal.filter((entry) => entry.religion === religion).length, "Tagebuch-Einträge"], ["🤝", current.deeds.filter((deed) => deed.religion === religion).length, "gute Taten"],
   ];
 }
 
@@ -61,7 +63,6 @@ const TILES = [
   { group: "Umkehr & Neuanfang", items: [
     ["repent", "🌱", "Umkehr – Tauba & Beichte", "Wie ein Neuanfang vor Gott gelingt."],
     ["review", "🌙", "Abendlicher Rückblick", "Examen bzw. Muḥāsaba – fünf Minuten am Abend."],
-    ["steps", "👣", "12 Schritte im Glauben", "Der bewährte Weg aus der Sucht – mit Gott."],
     ["stories", "📜", "Geschichten der Umkehr", "Menschen, die gefallen und aufgestanden sind."],
   ] },
   { group: "Wachsen im Glauben", items: [
@@ -85,7 +86,7 @@ export function renderWege(ctx) {
   const words = religions.map((religion) => ({ religion, ...wordOfDay(religion) }));
   const names = religions.map((religion) => ({ religion, ...nameOfDay(religion) }));
   view.innerHTML = `
-    <section class="wege-stats card">${stats().map(([icon, value, label]) => `<div><span>${icon}</span><b>${value}</b><small>${label}</small></div>`).join("")}</section>
+    ${religions.map((religion) => `<section class="wege-stats card">${religions.length > 1 ? `<header>${badge(religion)}</header>` : ""}${stats(religion).map(([icon, value, label]) => `<div><span>${icon}</span><b>${value}</b><small>${label}</small></div>`).join("")}</section>`).join("")}
     <div class="wege-daily">
       ${words.map((word) => `
         <section class="card faith-card word-card">
@@ -112,7 +113,7 @@ export function renderWege(ctx) {
 }
 
 export function openTool(id, ctx) {
-  const tools = { learn: () => (ctx.religions.length > 1 ? chooseLearn(ctx) : openLearn(ctx.religions[0])), compass, craving: () => ctx.openPrayer(ctx.religions, "craving"), still: () => openStillness(ctx.religions), help, repent, review, steps, stories, freedom, plans, names, memorize, guides, words, deeds, place, rooms };
+  const tools = { learn: () => (ctx.religions.length > 1 ? chooseLearn(ctx) : openLearn(ctx.religions[0])), compass, craving: () => ctx.openPrayer(ctx.religions, "craving"), still: () => openStillness(ctx.religions), help, repent, review, stories, freedom, plans, names, memorize, guides, words, deeds, place, rooms };
   tools[id]?.(ctx);
 }
 
@@ -196,37 +197,6 @@ function review({ religions, showToast }) {
       showToast("Gespeichert. Schlaf in Frieden. 🌙");
       return undefined;
     });
-  };
-  draw();
-}
-
-function steps({ religions, showToast }) {
-  const { dialog } = openSheet({ title: "12 Schritte im Glauben", wide: true, body: '<div id="steps"></div>' });
-  const draw = () => {
-    const done = faith().steps;
-    const count = Object.values(done).filter((step) => step.done).length;
-    dialog.querySelector("#steps").innerHTML = `
-      <p class="sheet-text">Angelehnt an die Zwölf Schritte der Selbsthilfe – so wie christliche Gruppen und die islamische Gemeinschaft „Millati Islami“ (Weg des Friedens) sie mit Gott gehen. Geh sie in deinem Tempo.</p>
-      <div class="steps-progress"><span style="--w:${(count / 12) * 100}%"></span><small>${count} von 12 Schritten</small></div>
-      <div class="steps-list">${STEPS.map((step, index) => `
-        <details class="step ${done[index]?.done ? "is-done" : ""}">
-          <summary><b>${index + 1}</b><span>${escapeHtml(step.title)}</span>${done[index]?.done ? "<i>✓</i>" : ""}</summary>
-          ${religions.map((religion) => `<p class="step-text">${religions.length > 1 ? `${RELIGIONS[religion].symbol} ` : ""}${escapeHtml(step[religion])}</p>`).join("")}
-          <label class="step-prompt">${escapeHtml(step.prompt)}<textarea rows="3" maxlength="2000" data-step-note="${index}">${escapeHtml(done[index]?.note || "")}</textarea></label>
-          <button class="button ${done[index]?.done ? "button-secondary" : "button-primary"} small" data-step="${index}" type="button">${done[index]?.done ? "Wieder öffnen" : "Schritt gegangen ✓"}</button>
-        </details>`).join("")}</div>`;
-    dialog.querySelectorAll("[data-step-note]").forEach((input) => input.addEventListener("change", () => {
-      const index = input.dataset.stepNote;
-      saveFaith({ steps: { ...faith().steps, [index]: { ...(faith().steps[index] || {}), note: input.value } } });
-    }));
-    dialog.querySelectorAll("[data-step]").forEach((button) => button.addEventListener("click", () => {
-      const index = button.dataset.step;
-      const entry = faith().steps[index] || {};
-      saveFaith({ steps: { ...faith().steps, [index]: { ...entry, done: !entry.done, note: dialog.querySelector(`[data-step-note="${index}"]`).value } } });
-      if (!entry.done) showToast(`Schritt ${Number(index) + 1} gegangen. Gott geht mit dir. 🤍`);
-      draw();
-      dialog.querySelector(`details:nth-child(${Number(index) + 1})`)?.setAttribute("open", "");
-    }));
   };
   draw();
 }
@@ -418,22 +388,29 @@ function deeds({ religions, showToast }) {
       saved = 0;
     }
     const log = faith().deeds.slice().reverse();
+    const forReligion = dialog.querySelector("[data-deed-for].is-selected")?.dataset.deedFor || religions[0];
     const groups = [...new Set(GOOD_DEEDS.map(([group]) => group))];
     dialog.querySelector("#deeds").innerHTML = `
       <p class="sheet-text">Wer anderen hilft, heilt selbst. Gutes tun gibt der Zeit, die früher die Sucht hatte, einen neuen Sinn – und bringt dich zurück in die Gemeinschaft.</p>
       ${saved > 1 ? `<div class="deed-money">💶 Durch deinen Verzicht hast du rund <strong class="sensitive">${saved.toFixed(0)} €</strong> gespart. ${religions.includes("islam") ? `2,5 % davon als Ṣadaqa wären <strong>${(saved * 0.025).toFixed(2)} €</strong>. ` : ""}${religions.includes("christian") ? `Ein Zehntel als Spende wären <strong>${(saved * 0.1).toFixed(2)} €</strong>.` : ""}</div>` : ""}
       ${groups.map((group) => `<h4 class="deed-group">${escapeHtml(group)}</h4><div class="deed-grid">${GOOD_DEEDS.filter(([item]) => item === group).map(([, icon, text]) => `<button type="button" class="deed" data-deed="${escapeHtml(text)}"><span>${icon}</span>${escapeHtml(text)}</button>`).join("")}</div>`).join("")}
+      ${religions.length > 1 ? `<div class="deed-for"><span>Zählt für:</span><div class="segmented small">${religions.map((id) => `<button type="button" data-deed-for="${id}" class="${id === forReligion ? "is-selected" : ""}">${badge(id)}</button>`).join("")}</div></div>` : ""}
+      <p class="muted small">So wird gezählt: Jede Tat, die du hier einträgst, zählt <strong>einmal</strong> – und nur für ${religions.length > 1 ? "die oben gewählte Religion" : "deine Religion"}. Die Zahl oben in „Wege“ ist die Summe deiner Einträge.</p>
       <form class="deed-own" id="deed-form"><input id="deed-text" maxlength="200" placeholder="Eigene gute Tat eintragen …"><button class="button button-primary" type="submit">Eintragen</button></form>
       <h4 class="deed-group">Deine guten Taten (${log.length})</h4>
-      <div class="deed-log">${log.slice(0, 30).map((deed) => `<div><span>✓ ${escapeHtml(deed.text)}</span><small>${new Date(deed.at).toLocaleDateString("de-DE")}</small></div>`).join("") || '<p class="muted small">Tippe oben auf eine Idee, wenn du sie umgesetzt hast.</p>'}</div>`;
+      <div class="deed-log">${log.slice(0, 30).map((deed) => `<div><span>${deed.religion ? RELIGIONS[deed.religion].symbol : "✓"} ${escapeHtml(deed.text)}</span><small>${new Date(deed.at).toLocaleDateString("de-DE")}</small></div>`).join("") || '<p class="muted small">Tippe oben auf eine Idee, wenn du sie umgesetzt hast.</p>'}</div>`;
     const add = (text) => {
-      saveFaith({ deeds: [...faith().deeds, { id: crypto.randomUUID(), text, at: Date.now() }].slice(-1000) });
-      showToast(religions.includes("islam") && religions.length === 1 ? "Möge Allah es annehmen. 🤲" : "Danke! Gutes kommt zurück. 🤍");
+      saveFaith({ deeds: [...faith().deeds, { id: crypto.randomUUID(), text, religion: forReligion, at: Date.now() }].slice(-1000) });
+      showToast(forReligion === "islam" ? "Möge Allah es annehmen. 🤲" : "Danke! Gott segne dich. 🤍");
       draw();
     };
     dialog.querySelectorAll("[data-deed]").forEach((button) => button.addEventListener("click", async () => {
       const ok = await confirmSheet({ title: "Gute Tat eintragen?", text: `„${escapeHtml(button.dataset.deed)}“ – hast du das heute getan?`, confirmLabel: "Ja, eintragen" });
       if (ok) add(button.dataset.deed);
+    }));
+    dialog.querySelectorAll("[data-deed-for]").forEach((button) => button.addEventListener("click", () => {
+      dialog.querySelectorAll("[data-deed-for]").forEach((item) => item.classList.toggle("is-selected", item === button));
+      draw();
     }));
     dialog.querySelector("#deed-form").addEventListener("submit", (event) => {
       event.preventDefault();

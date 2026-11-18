@@ -1261,6 +1261,7 @@ input[type="range"]:disabled {
 
 .sheet::backdrop {
   background: rgba(0, 0, 0, 0.32);
+  /* the blur is dropped in energy-saver mode: without a GPU it is redrawn every frame (18 instead of 76 FPS) */
   backdrop-filter: blur(6px);
   animation: fade var(--t) ease;
 }
@@ -1633,8 +1634,8 @@ input[type="range"]:disabled {
 
 .achievement-icon {
   font-size: 2rem;
-  filter: grayscale(1);
-  opacity: 0.45;
+  filter: saturate(0.35);
+  opacity: 0.7;
 }
 
 .achievement.is-unlocked {
@@ -1644,6 +1645,18 @@ input[type="range"]:disabled {
 .achievement.is-unlocked .achievement-icon {
   filter: none;
   opacity: 1;
+  animation: achievement-glow 2.4s ease-in-out 3;
+}
+
+@keyframes achievement-glow {
+  50% { transform: scale(1.12); filter: drop-shadow(0 0 10px color-mix(in srgb, var(--orange) 70%, transparent)); }
+}
+
+.achievement-done {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
 }
 
 /* ==========================================================================
@@ -3119,7 +3132,8 @@ input[type="range"]:disabled {
    a little more opaque instead. */
 :root[data-energy="on"] *,
 :root[data-energy="on"] *::before,
-:root[data-energy="on"] *::after {
+:root[data-energy="on"] *::after,
+:root[data-energy="on"] *::backdrop {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
@@ -3131,4 +3145,49 @@ input[type="range"]:disabled {
 
 :root[data-energy="on"] .faith-page[data-faith-theme="light"] {
   --surface: rgba(255, 253, 248, 0.94);
+}
+
+.timer-custom {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.timer-custom label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 12px;
+  background: var(--fill, rgba(127,127,127,.12));
+  color: var(--label-2);
+  font-weight: 600;
+}
+.timer-custom input {
+  width: 64px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.language-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  padding-bottom: 6px;
+}
+.language-grid .choice {
+  justify-content: center;
+  font-size: 1.05rem;
+}
+
+.settings-nav-group {
+  margin: 12px 10px 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--label-3);
+}
+.settings-nav-item.is-child {
+  margin-left: 18px;
+  font-size: 0.92rem;
 }

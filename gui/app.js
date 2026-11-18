@@ -1,8 +1,11 @@
+import { openRunner } from "./calm.js";
+import { openDonation } from "./donate.js";
+import { initI18n, LANGUAGES, currentLanguage } from "./i18n.js";
 import { api, onDesktopEvent } from "./api.js";
 import { startHelpWatcher, requestHelp } from "./help.js";
 import { openIntervention } from "./intervention.js";
-import { loadPrefs, prefs, applyPrefs } from "./prefs.js";
-import { reveal } from "./ui.js";
+import { loadPrefs, prefs, applyPrefs, setPref, savePrefs, onPrefChange } from "./prefs.js";
+import { reveal, openSheet, confirmSheet } from "./ui.js";
 import { openSos } from "./sos.js";
 import { openPalette } from "./palette.js";
 import { openAccount } from "./account.js";
@@ -124,14 +127,14 @@ const commands = [
   { icon: "🕊️", label: "Glaube – Gebet, Bibel & Koran", keywords: "gott gebet bibel koran gebetszeiten moschee kirche", hint: "Strg 5", run: () => navigate("faith") },
   { icon: "🌱", label: "Täglicher Check-in", keywords: "stimmung verlangen tagebuch", run: () => openCheckin({ ...context, onSaved: () => activePage === "home" && navigate("home", { keepScroll: true }) }) },
   { icon: "🤝", label: "Mit einer Vertrauensperson sprechen", keywords: "hilfe mensch reden chat", run: () => requestHelp(context) },
-  { icon: "🛟", label: "Ich brauche Hilfe", keywords: "sos notfall atem verlangen", hint: "Strg H", run: () => openSos({ goTo: navigate }) },
+  { icon: "🆘", label: "Ich brauche Hilfe", keywords: "sos notfall atem verlangen", hint: "Strg H", run: () => openSos({ goTo: navigate }) },
   { icon: "☁️", label: "Konto & Google-Synchronisierung", keywords: "anmelden login backup kalender", run: () => openAccount(context) },
   { icon: "🧭", label: "Einführung erneut ansehen", keywords: "onboarding start", run: () => openOnboarding({ ...context, onDone: () => navigate("home") }) },
 ];
 
 document.querySelector("#sos-button").addEventListener("click", () => openSos({ goTo: navigate }));
 document.querySelector("#donate-button").addEventListener("click", () => {
-  api("/api/app/open-external", { method: "POST", body: { url: "https://streamelements.com/rehscho/tip" } }).catch((error) => showToast(error.message, true));
+  openDonation().catch((error) => showToast(error.message, true)); // also gives 28 days without the overview ask
 });
 document.querySelector("#profile-button").addEventListener("click", () => openAccount(context));
 window.addEventListener("reso:account", () => {
@@ -184,6 +187,14 @@ window.addEventListener("reso:quit-state", (event) => {
 });
 onDesktopEvent(({ type, payload }) => {
   if (type === "trigger") openIntervention(payload.word, context); else if (type === "sos") openSos({ goTo: navigate });
+  else if (type === "game") openRunner();
+  else if (type === "update-ready") {
+    confirmSheet({
+      title: "Ein Update ist bereit 🎉",
+      text: "Die neue Version von Life wurde im Hintergrund geladen. Ein Neustart dauert nur ein paar Sekunden. Sonst wird sie beim nächsten Start installiert.",
+      confirmLabel: "Jetzt neu starten",
+    }).then((ok) => { if (ok) api("/api/app/install-update", { method: "POST", body: {} }).catch((error) => showToast(error.message, true)); });
+  }
   else if (type === "navigate") navigate(payload.page);
   else if (type === "quit-changed") window.dispatchEvent(new CustomEvent("reso:quit-state", { detail: payload }));
   else if (type === "quit-blocked") showToast("Life beendest du über das Symbol unten rechts (Rechtsklick → Beenden, 30 Min. Wartezeit).");
@@ -222,6 +233,9 @@ document.addEventListener("keydown", (event) => {
 
 applyPrefs();
 await loadPrefs(api);
+await initI18n();
+// a new language needs a fresh page: everything is rendered once more, translated
+onPrefChange((key) => { if (key === "language") savePrefs().finally(() => location.reload()); });
 await navigate(pages[prefs.startPage] ? prefs.startPage : "home");
 startCompanion(context);
 startSidebar(context);
@@ -237,4 +251,16 @@ const syncFaithNav = () => {
 };
 loadFaith().then(syncFaithNav).catch(() => {});
 onFaithChange(syncFaithNav);
-if (!prefs.onboarded) openOnboarding({ ...context, onDone: () => navigate("home") });
+// first start: choose the language, then the tutorial (in that language) – the page reloads once in between
+if (!prefs.onboarded && !prefs.language) {
+  const { dialog, close } = openSheet({
+    title: "Language",
+    body: `<div class="language-grid">${LANGUAGES.map(([code, name]) => `<button type="button" class="choice ${code === currentLanguage() ? "is-selected" : ""}" data-lang="${code}" data-no-i18n>${name}</button>`).join("")}</div>`,
+  });
+  dialog.querySelectorAll("[data-lang]").forEach((button) => button.addEventListener("click", async () => {
+    setPref("language", button.dataset.lang);
+    await savePrefs();
+    close();
+    location.reload();
+  }));
+} else if (!prefs.onboarded) openOnboarding({ ...context, onDone: () => navigate("home") });
